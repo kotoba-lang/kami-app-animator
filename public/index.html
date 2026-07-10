@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html>
+  <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Kami Animator</title><style>body { margin: 0; font-family: system-ui; background: #0b1020; color: #e8ecf8; }
+header { padding: 16px; background: #111936; display: flex; justify-content: space-between; }
+main { padding: 24px; }
+.timeline { margin-top: 20px; height: 160px; border: 1px solid #425681; background: linear-gradient(90deg,#162242 1px,transparent 1px); background-size: 80px 100%; position: relative; }
+.key { position: absolute; width: 14px; height: 14px; background: #87a7ff; transform: rotate(45deg); }
+button { padding: 8px 12px; background: #6f8fff; border: 0; border-radius: 6px; }</style></head>
+  <body>
+    <header>
+      <strong>KAMI ANIMATOR</strong>
+      <button id="play">Play</button>
+    </header>
+    <main>
+      <h1>Timeline</h1>
+      <p>Keyframe animation preview · Cube X</p>
+      <div class="timeline">
+        <i class="key" style="left:20%;top:70;"></i>
+        <i class="key" style="left:72%;top:70;"></i>
+      </div>
+      <p id="time">00:00 / 00:02</p>
+    </main>
+  </body>
+</html>
