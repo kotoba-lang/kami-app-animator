@@ -12,7 +12,7 @@
                               ".key" {:position :absolute :width 14 :height 14 :background "#87a7ff" :transform "rotate(45deg)"}
                               "button" {:padding "8px 12px" :background "#6f8fff" :border 0 :border-radius 6}}})]]
     [:body
-     [:header [:strong "KAMI ANIMATOR"] [:button {:id "play"} "Play"]]
+     [:header [:strong "KAMI ANIMATOR"] [:a {:href "https://kotoba-lang.github.io/kami-studio/"} "Studio"] [:button {:id "play"} "Play"]]
      [:main [:h1 "Timeline"] [:p "Keyframe animation preview · Cube X"]
       [:div.timeline [:i.key {:style {:left "20%" :top 70}}] [:i.key {:style {:left "72%" :top 70}}]]
       [:p {:id "time"} "00:00 / 00:02"]]]]))
