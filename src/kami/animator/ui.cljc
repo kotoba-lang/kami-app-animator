@@ -24,7 +24,7 @@
    [:head [:meta {:charset "utf-8"}] [:meta {:name "viewport" :content "width=device-width,initial-scale=1"}] [:link {:rel "icon" :href "data:,"}] [:title "Kami Animator"] [:style (css/css sheet)]]
    [:body
     [:header [:strong "KAMI ANIMATOR"] [:a {:href "https://kotoba-lang.github.io/kami-studio/"} "Studio"] [:span "WebGPU animation workspace"] [:span.spacer] [:button {:id "undo"} "Undo"] [:button {:id "redo"} "Redo"] [:button {:id "save-project"} "Save"] [:button {:id "load-project"} "Load"] [:button {:id "import"} "Import"] [:input {:id "import-file" :type "file" :accept ".edn,.kami-animator.edn" :style {:display "none"}}] [:button {:id "export"} "Export Project"]]
-    [:section.workspace [:aside [:h2 "Outliner"] [:button "◆ Cube"] [:h2 "Channels"]
+    [:section.workspace [:aside [:h2 "Outliner"] [:button "◆ Cube"] [:h2 "Skeleton"] [:button.primary {:id "bone-root"} "◇ Root"] [:button {:id "bone-spine"} "  ◇ Spine"] [:button {:id "bone-head"} "    ◇ Head"] [:h2 "Channels"]
                                 [:button.primary {:id "channel-x"} "Location X"]
                                 [:button {:id "channel-y"} "Location Y"] [:button {:id "channel-z"} "Location Z"]
                                 [:button {:id "channel-rotation-x"} "Rotation X"] [:button {:id "channel-rotation-y"} "Rotation Y"] [:button {:id "channel-rotation-z"} "Rotation Z"]

@@ -26,7 +26,8 @@
                       :selected-keys #{}
                       :profile :maya :history [initial] :future []
                       :project-id "untitled-animation" :project-name "Untitled Animation"
-                      :fps 24 :frame-snap? true :clipboard nil :revision 0 :save-status :clean}))
+                      :fps 24 :frame-snap? true :clipboard nil :revision 0 :save-status :clean
+                      :rig project/default-rig :pose project/default-pose :selected-bone :root}))
 (defonce viewport (atom nil))
 (declare update-ui! set-time!)
 
@@ -96,6 +97,9 @@
     (doseq [target channels]
       (.toggle (.-classList (.getElementById js/document (str "channel-" (name target))))
                "primary" (= target active-target)))
+    (doseq [bone [:root :spine :head]]
+      (.toggle (.-classList (.getElementById js/document (str "bone-" (name bone))))
+               "primary" (= bone (:selected-bone @state))))
     (set! (.-textContent (.getElementById js/document "active-channel"))
           (:label (first (filter #(= active-target (:target %)) channel-defs))))
     (when k
@@ -118,7 +122,9 @@
                                        :projectVersion project/current-version :revision revision :saveStatus (name save-status)
                                        :fps fps :frame (js/Math.round (* time fps)) :frameSnap frame-snap?
                                        :clipboard (boolean clipboard) :graphSamples 65 :selectedCount (count selected-keys)
-                                       :selected (some-> selected str)
+                                       :selected (some-> selected str) :selectedBone (some-> (:selected-bone @state) name)
+                                       :boneCount (count (get-in @state [:rig :skeleton/bones]))
+                                       :poseMatrices (count (animation/bone-world-matrices (:rig @state) (:pose @state)))
                                        :translation (mapv #(get (animation/evaluate timeline time) % 0) (take 3 channels))
                                        :rotation (mapv #(get (animation/evaluate timeline time) % 0) (take 3 (drop 3 channels)))
                                        :scale (mapv #(get (animation/evaluate timeline time) % 1) (drop 6 channels))})))
@@ -223,10 +229,11 @@
 (def ^:private storage-key "kami.animator.project.v2")
 (def ^:private backup-key "kami.animator.project.backup")
 (defn- project-document []
-  (let [{:keys [project-id project-name timeline time active-target selected selected-keys profile fps frame-snap?]} @state]
+  (let [{:keys [project-id project-name timeline time active-target selected selected-keys profile fps frame-snap? rig pose selected-bone]} @state]
     (project/document {:id project-id :name project-name :timeline timeline
+                       :rig rig :pose pose
                        :editor {:time time :active-target active-target :selected selected :selected-keys (vec selected-keys) :profile profile
-                                :fps fps :frame-snap? frame-snap?}})))
+                                :fps fps :frame-snap? frame-snap? :selected-bone selected-bone}})))
 (defn- save-project! []
   (let [data (pr-str (project-document)) previous (.getItem js/localStorage storage-key)]
     (when previous (.setItem js/localStorage backup-key previous))
@@ -239,6 +246,7 @@
            :active-target target :selected (:selected editor) :profile (:profile editor :maya)
            :selected-keys (set (:selected-keys editor (if-let [id (:selected editor)] [id] [])))
            :fps (:fps editor 24) :frame-snap? (:frame-snap? editor true)
+           :rig (:project/rig p) :pose (:project/pose p) :selected-bone (:selected-bone editor :root)
            :playing? false :history [tl] :future [] :save-status :saved)
     (set! (.-value (.getElementById js/document "profile")) (name (:profile editor :maya)))
     (update-ui!)))
@@ -290,6 +298,9 @@
     (doseq [target channels]
       (.addEventListener (.getElementById js/document (str "channel-" (name target))) "click"
                          #(do (swap! state assoc :active-target target :selected nil :selected-keys #{}) (update-ui!))))
+    (doseq [bone [:root :spine :head]]
+      (.addEventListener (.getElementById js/document (str "bone-" (name bone))) "click"
+                         #(do (swap! state assoc :selected-bone bone :save-status :dirty) (update-ui!))))
     (.addEventListener (.getElementById js/document "add-key") "click" add-key!)
     (.addEventListener (.getElementById js/document "delete-key") "click" delete-key!)
     (.addEventListener (.getElementById js/document "copy-key") "click" copy-key!)
