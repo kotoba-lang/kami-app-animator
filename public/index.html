@@ -1,25 +1,81 @@
 <!DOCTYPE html>
-<html>
-  <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Kami Animator</title><style>body { margin: 0; font-family: system-ui; background: #0b1020; color: #e8ecf8; }
-header { padding: 16px; background: #111936; display: flex; justify-content: space-between; }
-main { padding: 24px; }
-.timeline { margin-top: 20px; height: 160px; border: 1px solid #425681; background: linear-gradient(90deg,#162242 1px,transparent 1px); background-size: 80px 100%; position: relative; }
-.key { position: absolute; width: 14px; height: 14px; background: #87a7ff; transform: rotate(45deg); }
-button { padding: 8px 12px; background: #6f8fff; border: 0; border-radius: 6px; }</style></head>
+<html lang="en">
+  <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" href="data:,"><title>Kami Animator</title><style>aside:last-child { border-left: 1px solid #293456; border-right: 0; }
+* { box-sizing: border-box; }
+.primary { background: #6f8fff; color: #071127; font-weight: 700; }
+.viewport { position: relative; }
+#scrub { width: calc(100% - 36px); }
+body { margin: 0; height: 100vh; display: grid; grid-template-rows: 52px 1fr 260px; font-family: Inter,system-ui; background: #090d18; color: #e8ecf8; }
+.playhead { position: absolute; top: 0; bottom: 0; width: 2px; background: #ff6f87; pointer-events: none; }
+label { display: grid; gap: 5px; margin-bottom: 10px; }
+h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .12em; color: #91a1ca; }
+.tracks { padding: 14px; border-right: 1px solid #334267; }
+.key { position: absolute; top: 17px; width: 14px; height: 14px; border: 0; padding: 0; background: #87a7ff; transform: translateX(-50%) rotate(45deg); }
+.inspector { padding: 14px; border-left: 1px solid #334267; }
+.key.selected { background: #ffd18f; }
+header .spacer { flex: 1; }
+#gpu-canvas { width: 100%; height: 100%; display: block; }
+#gpu-status { position: absolute; left: 50%; top: 45%; transform: translate(-50%,-50%); color: #ffb5b5; }
+.timeline { display: grid; grid-template-columns: 220px 1fr 250px; background: #0e1427; border-top: 1px solid #334267; }
+aside { padding: 14px; background: #10172b; border-right: 1px solid #293456; }
+.lane { position: relative; margin: 42px 18px; height: 50px; background: repeating-linear-gradient(90deg,#2b385b 0 1px,transparent 1px 10%); }
+button,select,input { background: #18213c; color: #eef2ff; border: 1px solid #40517d; border-radius: 5px; padding: 7px 10px; }
+header { display: flex; align-items: center; gap: 18px; padding: 0 16px; background: #111936; border-bottom: 1px solid #293456; }
+.workspace { display: grid; grid-template-columns: 220px 1fr 250px; min-height: 0; }
+button { cursor: pointer; }</style></head>
   <body>
     <header>
       <strong>KAMI ANIMATOR</strong>
       <a href="https://kotoba-lang.github.io/kami-studio/">Studio</a>
-      <button id="play">Play</button>
+      <span>WebGPU animation workspace</span>
+      <span class="spacer"></span>
+      <button id="undo">Undo</button>
+      <button id="redo">Redo</button>
+      <button id="export">Export EDN</button>
     </header>
-    <main>
-      <h1>Timeline</h1>
-      <p>Keyframe animation preview · Cube X</p>
-      <div class="timeline">
-        <i class="key" style="left:20%;top:70;"></i>
-        <i class="key" style="left:72%;top:70;"></i>
+    <section class="workspace">
+      <aside>
+        <h2>Outliner</h2>
+        <button>◆ Cube</button>
+        <h2>Channels</h2>
+        <button class="primary">Location X</button>
+      </aside>
+      <main class="viewport">
+        <canvas id="gpu-canvas" aria-label="Animated WebGPU viewport"></canvas>
+        <div id="gpu-status">Initializing WebGPU…</div>
+      </main>
+      <aside>
+        <h2>Playback</h2>
+        <button class="primary" id="play">▶ Play</button>
+        <button id="add-key">＋ Key at playhead</button>
+        <button id="delete-key">Delete selected</button>
+        <h2>Profile</h2>
+        <select id="profile">
+          <option>Maya</option>
+          <option>Blender</option>
+          <option>3ds Max</option>
+        </select>
+      </aside>
+    </section>
+    <section class="timeline">
+      <div class="tracks">
+        <strong>Cube</strong>
+        <p>Location X</p>
       </div>
-      <p id="time">00:00 / 00:02</p>
-    </main>
+      <div><div class="lane" id="lane">
+        <div class="playhead" id="playhead"></div>
+      </div><input id="scrub" type="range" min="0" max="2" step="0.01" value="0"><span id="time">0.00 / 2.00 s</span></div>
+      <div class="inspector">
+        <h2>Keyframe</h2>
+        <label>Time<input id="key-time" type="number" step="0.1"></label>
+        <label>Value<input id="key-value" type="number" step="0.1"></label>
+        <label>Interpolation<select id="interpolation">
+          <option value="linear">Linear</option>
+          <option value="smooth">Smooth</option>
+          <option value="step">Step</option>
+        </select></label>
+      </div>
+    </section>
+    <script src="./js/app.js"></script>
   </body>
 </html>
