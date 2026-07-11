@@ -50,7 +50,16 @@
                "primary" (= target active-target)))
     (set! (.-textContent (.getElementById js/document "active-channel"))
           (:label (first (filter #(= active-target (:target %)) channel-defs))))
-    (when k (set! (.-value (.getElementById js/document "key-time")) (:keyframe/time k)) (set! (.-value (.getElementById js/document "key-value")) (:keyframe/value k)) (set! (.-value (.getElementById js/document "interpolation")) (name (:keyframe/interpolation k))))
+    (when k
+      (set! (.-value (.getElementById js/document "key-time")) (:keyframe/time k))
+      (set! (.-value (.getElementById js/document "key-value")) (:keyframe/value k))
+      (set! (.-value (.getElementById js/document "interpolation")) (name (:keyframe/interpolation k)))
+      (set! (.-value (.getElementById js/document "tangent-in")) (:keyframe/tangent-in k 0))
+      (set! (.-value (.getElementById js/document "tangent-out")) (:keyframe/tangent-out k 0)))
+    (set! (.-checked (.getElementById js/document "loop")) (:timeline/loop? timeline))
+    (set! (.-value (.getElementById js/document "loop-start")) (:timeline/loop-start timeline 0))
+    (set! (.-value (.getElementById js/document "loop-end")) (:timeline/loop-end timeline (:timeline/duration timeline)))
+    (set! (.-value (.getElementById js/document "playback-rate")) (:timeline/playback-rate timeline 1))
     (set! (.-textContent (.getElementById js/document "debug-state"))
           (js/JSON.stringify (clj->js {:time time :keyCount (count (frames)) :trackCount (count channels)
                                        :activeTarget (str active-target)
@@ -70,8 +79,12 @@
   (js/requestAnimationFrame draw!))
 (defn- tick! [last-ms]
   (when (:playing? @state)
-    (let [now (js/performance.now) dt (/ (- now last-ms) 1000) t (+ (:time @state) dt)]
-      (swap! state assoc :time (if (> t 2) 0 t)) (update-ui!) (js/requestAnimationFrame #(tick! now)))))
+    (let [now (js/performance.now) timeline (:timeline @state)
+          dt (* (/ (- now last-ms) 1000) (:timeline/playback-rate timeline 1)) t (+ (:time @state) dt)
+          end (if (:timeline/loop? timeline) (:timeline/loop-end timeline) (:timeline/duration timeline))
+          next-time (if (> t end) (if (:timeline/loop? timeline) (:timeline/loop-start timeline) end) t)]
+      (swap! state assoc :time next-time :playing? (or (:timeline/loop? timeline) (< next-time end)))
+      (update-ui!) (when (:playing? @state) (js/requestAnimationFrame #(tick! now))))))
 (defn ^:export init! []
   (let [canvas (.getElementById js/document "gpu-canvas")]
     (-> (gpu-mesh/init-canvas! canvas) (.then (fn [v] (let [b (gpu-mesh/upload-mesh! (:mesh-context v) cube-geo)] (reset! viewport (assoc v :buffers b)) (set! (.-textContent (.getElementById js/document "gpu-status")) "") (draw!)))))
@@ -94,6 +107,26 @@
                        #(when-let [id (:selected @state)]
                           (commit! (animation/update-keyframe (:timeline @state) (:active-target @state) id assoc
                                                               :keyframe/interpolation (keyword (.. % -target -value))))))
+    (doseq [[id field] [["tangent-in" :keyframe/tangent-in] ["tangent-out" :keyframe/tangent-out]]]
+      (.addEventListener (.getElementById js/document id) "change"
+                         #(when-let [frame-id (:selected @state)]
+                            (commit! (animation/update-keyframe (:timeline @state) (:active-target @state) frame-id assoc
+                                                                field (js/parseFloat (.. % -target -value)))))))
+    (.addEventListener (.getElementById js/document "auto-tangents") "click"
+                       #(let [target (:active-target @state)
+                              timeline (:timeline @state)
+                              tracks (mapv (fn [track] (if (= target (:track/target track)) (animation/auto-tangents track) track)) (:timeline/tracks timeline))]
+                          (commit! (assoc timeline :timeline/tracks tracks))))
+    (.addEventListener (.getElementById js/document "loop") "change"
+                       #(commit! (assoc (:timeline @state) :timeline/loop? (.. % -target -checked))))
+    (doseq [[id field] [["loop-start" :timeline/loop-start] ["loop-end" :timeline/loop-end] ["playback-rate" :timeline/playback-rate]]]
+      (.addEventListener (.getElementById js/document id) "change"
+                         #(let [timeline (:timeline @state) raw (js/parseFloat (.. % -target -value))
+                                value (case field
+                                        :timeline/loop-start (max 0 (min raw (- (:timeline/loop-end timeline) 0.01)))
+                                        :timeline/loop-end (min (:timeline/duration timeline) (max raw (+ (:timeline/loop-start timeline) 0.01)))
+                                        :timeline/playback-rate (max 0.1 (min 4 raw)))]
+                            (commit! (assoc timeline field value)))))
     (.addEventListener (.getElementById js/document "undo") "click" #(when (> (count (:history @state)) 1) (swap! state (fn [s] (let [h (:history s) cur (peek h) h2 (pop h)] (assoc s :history h2 :timeline (peek h2) :future (conj (:future s) cur))))) (update-ui!)))
     (.addEventListener (.getElementById js/document "redo") "click"
                        (fn [] (when-let [tl (peek (:future @state))]
