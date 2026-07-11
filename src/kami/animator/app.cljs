@@ -1,5 +1,6 @@
 (ns kami.animator.app
-  (:require [kami.animation :as animation] [kami.webgpu.mesh :as gpu-mesh]))
+  (:require [cljs.reader :as reader] [kami.animation :as animation]
+            [kami.animator.project :as project] [kami.webgpu.mesh :as gpu-mesh]))
 
 (def cube-geo
   {:positions [[-1 -1 -1] [1 -1 -1] [1 1 -1] [-1 1 -1] [-1 -1 1] [1 -1 1] [1 1 1] [-1 1 1]
@@ -22,7 +23,9 @@
                 :cube/rotation-z [(animation/keyframe 0 0) (animation/keyframe 2 (* 2 js/Math.PI) :smooth)]
                 [(animation/keyframe 0 default) (animation/keyframe 2 default)]))) channel-defs)))
 (defonce state (atom {:timeline initial :time 0 :playing? false :active-target :cube/x :selected nil
-                      :profile :maya :history [initial] :future []}))
+                      :profile :maya :history [initial] :future []
+                      :project-id "untitled-animation" :project-name "Untitled Animation"
+                      :revision 0 :save-status :clean}))
 (defonce viewport (atom nil))
 (declare update-ui!)
 
@@ -39,7 +42,7 @@
         (.addEventListener b "click" #(do (swap! state assoc :selected (:keyframe/id k)) (update-ui!)))
         (.appendChild lane b)))))
 (defn- update-ui! []
-  (let [{:keys [time timeline selected history future active-target profile]} @state
+  (let [{:keys [time timeline selected history future active-target profile revision save-status]} @state
         k (first (filter #(= selected (:keyframe/id %)) (frames)))]
     (set! (.-value (.getElementById js/document "scrub")) time)
     (set! (.. (.getElementById js/document "playhead") -style -left) (str (* 100 (/ time 2)) "%"))
@@ -71,12 +74,14 @@
           (js/JSON.stringify (clj->js {:time time :keyCount (count (frames)) :trackCount (count channels)
                                        :activeTarget (str active-target)
                                        :profile (name profile) :playing (:playing? @state)
+                                       :projectVersion project/current-version :revision revision :saveStatus (name save-status)
                                        :selected (some-> selected str)
                                        :translation (mapv #(get (animation/evaluate timeline time) % 0) (take 3 channels))
                                        :rotation (mapv #(get (animation/evaluate timeline time) % 0) (take 3 (drop 3 channels)))
                                        :scale (mapv #(get (animation/evaluate timeline time) % 1) (drop 6 channels))})))
     (render-keys!)))
-(defn- commit! [tl] (swap! state #(-> % (assoc :timeline tl :future []) (update :history conj tl))) (update-ui!))
+(defn- commit! [tl] (swap! state #(-> % (assoc :timeline tl :future [] :save-status :dirty)
+                                        (update :history conj tl) (update :revision inc))) (update-ui!))
 (defn- add-key! []
   (let [target (:active-target @state) time (:time @state)
         value (get (animation/evaluate (:timeline @state) time) target 0)
@@ -126,6 +131,39 @@
   (case command :add-key (add-key!) :delete-key (delete-key!) :play (toggle-play!) :undo (undo!) :redo (redo!)
         :next-frame (set-time! (+ (:time @state) (/ 1 24))) :previous-frame (set-time! (- (:time @state) (/ 1 24)))
         :start (set-time! 0) :end (set-time! (:timeline/duration (:timeline @state))) nil))
+
+(def ^:private storage-key "kami.animator.project.v2")
+(def ^:private backup-key "kami.animator.project.backup")
+(defn- project-document []
+  (let [{:keys [project-id project-name timeline time active-target selected profile]} @state]
+    (project/document {:id project-id :name project-name :timeline timeline
+                       :editor {:time time :active-target active-target :selected selected :profile profile}})))
+(defn- save-project! []
+  (let [data (pr-str (project-document)) previous (.getItem js/localStorage storage-key)]
+    (when previous (.setItem js/localStorage backup-key previous))
+    (.setItem js/localStorage storage-key data) (swap! state assoc :save-status :saved) (update-ui!)))
+(defn- apply-project! [value]
+  (let [p (project/open value) tl (:project/timeline p) editor (:project/editor p)
+        target (or (:active-target editor) (:track/target (first (:timeline/tracks tl))))]
+    (swap! state assoc :project-id (:project/id p) :project-name (:project/name p)
+           :timeline tl :time (min (:time editor 0) (:timeline/duration tl))
+           :active-target target :selected (:selected editor) :profile (:profile editor :maya)
+           :playing? false :history [tl] :future [] :save-status :saved)
+    (set! (.-value (.getElementById js/document "profile")) (name (:profile editor :maya)))
+    (update-ui!)))
+(defn- load-project! []
+  (when-let [data (.getItem js/localStorage storage-key)]
+    (try (apply-project! (reader/read-string data))
+         (catch :default _ (when-let [backup (.getItem js/localStorage backup-key)]
+                             (apply-project! (reader/read-string backup)))))))
+(defn- download-project! []
+  (let [a (.createElement js/document "a") url (.createObjectURL js/URL
+        (js/Blob. #js [(pr-str (project-document))] #js {:type "application/edn"}))]
+    (set! (.-href a) url) (set! (.-download a) "animation.kami-animator.edn") (.click a)
+    (js/setTimeout #(.revokeObjectURL js/URL url) 0)))
+(defn- import-project! [event]
+  (when-let [file (aget (.. event -target -files) 0)]
+    (-> (.text file) (.then #(apply-project! (reader/read-string %))))))
 (defn- draw! []
   (when-let [{:keys [buffers] :as v} @viewport]
     (let [values (animation/evaluate (:timeline @state) (:time @state))]
@@ -188,5 +226,9 @@
                             (commit! (assoc timeline field value)))))
     (.addEventListener (.getElementById js/document "undo") "click" undo!)
     (.addEventListener (.getElementById js/document "redo") "click" redo!)
-    (.addEventListener (.getElementById js/document "export") "click" #(let [a (.createElement js/document "a")] (set! (.-href a) (.createObjectURL js/URL (js/Blob. #js [(pr-str (:timeline @state))] #js {:type "application/edn"}))) (set! (.-download a) "animation.edn") (.click a)))
+    (.addEventListener (.getElementById js/document "save-project") "click" save-project!)
+    (.addEventListener (.getElementById js/document "load-project") "click" load-project!)
+    (.addEventListener (.getElementById js/document "import") "click" #(.click (.getElementById js/document "import-file")))
+    (.addEventListener (.getElementById js/document "import-file") "change" import-project!)
+    (.addEventListener (.getElementById js/document "export") "click" download-project!)
     (update-ui!)))

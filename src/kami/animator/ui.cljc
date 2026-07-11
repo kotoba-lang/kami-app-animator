@@ -20,7 +20,7 @@
   (html/html5 [:html {:lang "en"}
    [:head [:meta {:charset "utf-8"}] [:meta {:name "viewport" :content "width=device-width,initial-scale=1"}] [:link {:rel "icon" :href "data:,"}] [:title "Kami Animator"] [:style (css/css sheet)]]
    [:body
-    [:header [:strong "KAMI ANIMATOR"] [:a {:href "https://kotoba-lang.github.io/kami-studio/"} "Studio"] [:span "WebGPU animation workspace"] [:span.spacer] [:button {:id "undo"} "Undo"] [:button {:id "redo"} "Redo"] [:button {:id "export"} "Export EDN"]]
+    [:header [:strong "KAMI ANIMATOR"] [:a {:href "https://kotoba-lang.github.io/kami-studio/"} "Studio"] [:span "WebGPU animation workspace"] [:span.spacer] [:button {:id "undo"} "Undo"] [:button {:id "redo"} "Redo"] [:button {:id "save-project"} "Save"] [:button {:id "load-project"} "Load"] [:button {:id "import"} "Import"] [:input {:id "import-file" :type "file" :accept ".edn,.kami-animator.edn" :style {:display "none"}}] [:button {:id "export"} "Export Project"]]
     [:section.workspace [:aside [:h2 "Outliner"] [:button "◆ Cube"] [:h2 "Channels"]
                                 [:button.primary {:id "channel-x"} "Location X"]
                                 [:button {:id "channel-y"} "Location Y"] [:button {:id "channel-z"} "Location Z"]
