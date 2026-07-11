@@ -63,6 +63,7 @@
     (doseq [k (frames)]
       (let [b (.createElement js/document "button")]
         (set! (.-className b) (str "key" (when (= (:keyframe/id k) (:selected @state)) " selected")))
+        (.setAttribute b "aria-label" (str "Keyframe at " (:keyframe/time k) " seconds, value " (:keyframe/value k)))
         (set! (.. b -style -left) (str (* 100 (/ (:keyframe/time k) (:timeline/duration (:timeline @state)))) "%"))
         (.addEventListener b "click" #(do (swap! state assoc :selected (:keyframe/id k)) (update-ui!)))
         (.appendChild lane b)))))
