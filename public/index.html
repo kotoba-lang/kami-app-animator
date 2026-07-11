@@ -75,6 +75,12 @@ button { cursor: pointer; } :focus-visible { outline: 3px solid #ffd166; outline
         <label>Rotate Y<input id="pose-ry" type="number" step="0.05" value="0"></label>
         <label>Rotate Z<input id="pose-rz" type="number" step="0.05" value="0"></label>
         <button class="primary" id="key-bone-pose">Key Bone Pose</button>
+        <h2>Two-Bone IK</h2>
+        <label>Target X<input id="ik-target-x" type="number" step="0.1" value="1"></label>
+        <label>Target Y<input id="ik-target-y" type="number" step="0.1" value="1"></label>
+        <label>Elbow / Pole<select id="ik-elbow"><option value="positive">Positive</option><option value="negative">Negative</option></select></label>
+        <button class="primary" id="solve-ik">Solve Root → Spine</button>
+        <p id="ik-status" role="status">Target reached</p>
         <h2>Constraints</h2>
         <label>Target<select id="constraint-target"><option value="root">Root</option><option value="spine">Spine</option><option value="head">Head</option></select></label>
         <button id="add-copy-constraint">＋ Copy Translation</button><button id="add-limit-constraint">＋ Rotation Limit</button>

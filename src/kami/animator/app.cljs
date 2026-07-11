@@ -33,7 +33,7 @@
                       :project-id "untitled-animation" :project-name "Untitled Animation"
                       :fps 24 :frame-snap? true :clipboard nil :revision 0 :save-status :clean
                       :rig project/default-rig :pose project/default-pose :selected-bone :root
-                      :pose-history [project/default-pose] :pose-future [] :constraints []}))
+                      :pose-history [project/default-pose] :pose-future [] :constraints [] :ik project/default-ik}))
 (defonce viewport (atom nil))
 (declare update-ui! set-time! commit! snap-time)
 
@@ -128,6 +128,14 @@
                                                          (fn [items] (vec (remove (fn [item] (= (:constraint/id item) (:constraint/id constraint))) items))))
                                                    (swap! state assoc :save-status :dirty) (update-ui!)))
           (.appendChild row toggle) (.appendChild row remove) (.appendChild container row))))
+    (let [[x y] (get-in @state [:ik :ik/target])]
+      (set! (.-value (.getElementById js/document "ik-target-x")) x)
+      (set! (.-value (.getElementById js/document "ik-target-y")) y)
+      (set! (.-value (.getElementById js/document "ik-elbow")) (name (get-in @state [:ik :ik/elbow])))
+      (let [solution (animation/solve-two-bone-ik {:root [0 0] :length-a 1 :length-b 1
+                                                    :target [y (- x)] :elbow (get-in @state [:ik :ik/elbow])})]
+        (set! (.-textContent (.getElementById js/document "ik-status"))
+              (if (:ik/clamped? solution) "Target outside reach · clamped" "Target reached"))))
     (set! (.-textContent (.getElementById js/document "active-channel"))
           (:label (first (filter #(= active-target (:target %)) channel-defs))))
     (when k
@@ -283,7 +291,7 @@
 (defn- project-document []
   (let [{:keys [project-id project-name timeline time active-target selected selected-keys profile fps frame-snap? rig pose selected-bone constraints]} @state]
     (project/document {:id project-id :name project-name :timeline timeline
-                       :rig rig :pose pose :constraints constraints
+                       :rig rig :pose pose :constraints constraints :ik (:ik @state)
                        :editor {:time time :active-target active-target :selected selected :selected-keys (vec selected-keys) :profile profile
                                 :fps fps :frame-snap? frame-snap? :selected-bone selected-bone}})))
 (defn- save-project! []
@@ -299,7 +307,7 @@
            :selected-keys (set (:selected-keys editor (if-let [id (:selected editor)] [id] [])))
            :fps (:fps editor 24) :frame-snap? (:frame-snap? editor true)
            :rig (:project/rig p) :pose (:project/pose p) :selected-bone (:selected-bone editor :root)
-           :constraints (:project/constraints p)
+           :constraints (:project/constraints p) :ik (:project/ik p)
            :pose-history [(:project/pose p)] :pose-future []
            :playing? false :history [tl] :future [] :save-status :saved)
     (set! (.-value (.getElementById js/document "profile")) (name (:profile editor :maya)))
@@ -368,6 +376,19 @@
                                 next-trs (update current key assoc index (js/parseFloat (.. % -target -value)))]
                             (commit-pose! (assoc-in (:pose @state) [:pose/bones bone-id] next-trs)))))
     (.addEventListener (.getElementById js/document "key-bone-pose") "click" key-selected-bone-pose!)
+    (.addEventListener (.getElementById js/document "solve-ik") "click"
+      #(let [x (js/parseFloat (.-value (.getElementById js/document "ik-target-x")))
+             y (js/parseFloat (.-value (.getElementById js/document "ik-target-y")))
+             elbow (keyword (.-value (.getElementById js/document "ik-elbow")))
+             solution (animation/solve-two-bone-ik {:root [0 0] :length-a 1 :length-b 1
+                                                     :target [y (- x)] :elbow elbow})
+             root-z (- (:ik/root-rotation solution))
+             mid-z (- (:ik/mid-rotation solution))
+             pose (-> (:pose @state)
+                      (assoc-in [:pose/bones :root :rotation] [0 0 root-z])
+                      (assoc-in [:pose/bones :spine :rotation] [0 0 mid-z]))]
+         (swap! state assoc :ik {:ik/target [x y] :ik/elbow elbow})
+         (commit-pose! pose)))
     (.addEventListener (.getElementById js/document "add-copy-constraint") "click"
                        #(let [bone (:selected-bone @state) target (keyword (.-value (.getElementById js/document "constraint-target")))]
                           (when (not= bone target)

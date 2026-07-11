@@ -24,7 +24,8 @@
     (is (= 4 (:kami/version p)))
     (is (= [:root :spine :head] (mapv :bone/id (get-in p [:project/rig :skeleton/bones]))))
     (is (= {:pose/bones {}} (:project/pose p)))
-    (is (= [] (:project/constraints p)))))
+    (is (= [] (:project/constraints p)))
+    (is (= project/default-ik (:project/ik p)))))
 
 (deftest rejects-corrupt-and-unknown
   (is (thrown? #?(:clj Exception :cljs js/Error) (project/open {:hello :world})))
