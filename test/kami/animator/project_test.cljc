@@ -9,7 +9,7 @@
 (deftest project-round-trip
   (let [p (project/document {:id "walk" :name "Walk" :timeline timeline
                              :editor {:time 1 :active-target :cube/x :profile :blender :fps 30 :frame-snap? true}})]
-    (is (project/valid? p)) (is (= p (project/open p))) (is (= 3 (:kami/version p)))
+    (is (project/valid? p)) (is (= p (project/open p))) (is (= 4 (:kami/version p)))
     (is (= 30 (get-in p [:project/editor :fps])))))
 
 (deftest migrates-legacy-timeline
@@ -21,9 +21,10 @@
   (let [v2 (assoc (project/document {:timeline timeline :editor {}}) :kami/version 2)
         v2 (dissoc v2 :project/rig :project/pose)
         p (project/open v2)]
-    (is (= 3 (:kami/version p)))
+    (is (= 4 (:kami/version p)))
     (is (= [:root :spine :head] (mapv :bone/id (get-in p [:project/rig :skeleton/bones]))))
-    (is (= {:pose/bones {}} (:project/pose p)))))
+    (is (= {:pose/bones {}} (:project/pose p)))
+    (is (= [] (:project/constraints p)))))
 
 (deftest rejects-corrupt-and-unknown
   (is (thrown? #?(:clj Exception :cljs js/Error) (project/open {:hello :world})))

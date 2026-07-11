@@ -33,7 +33,7 @@
                       :project-id "untitled-animation" :project-name "Untitled Animation"
                       :fps 24 :frame-snap? true :clipboard nil :revision 0 :save-status :clean
                       :rig project/default-rig :pose project/default-pose :selected-bone :root
-                      :pose-history [project/default-pose] :pose-future []}))
+                      :pose-history [project/default-pose] :pose-future [] :constraints []}))
 (defonce viewport (atom nil))
 (declare update-ui! set-time! commit! snap-time)
 
@@ -113,6 +113,21 @@
       (doseq [[prefix values] [["pose-t" (:translation trs)] ["pose-r" (:rotation trs)]]
               [axis value] (map vector ["x" "y" "z"] values)]
         (set! (.-value (.getElementById js/document (str prefix axis))) value)))
+    (let [container (.getElementById js/document "constraint-stack")]
+      (set! (.-innerHTML container) "")
+      (doseq [constraint (:constraints @state)]
+        (let [row (.createElement js/document "div") toggle (.createElement js/document "button") remove (.createElement js/document "button")]
+          (set! (.-textContent toggle) (str (if (:constraint/enabled? constraint) "◉ " "○ ")
+                                             (name (:constraint/kind constraint)) " · " (name (:constraint/bone constraint))))
+          (.addEventListener toggle "click" #(do (swap! state update :constraints
+                                                         (fn [items] (mapv (fn [item] (if (= (:constraint/id item) (:constraint/id constraint))
+                                                                                       (update item :constraint/enabled? not) item)) items)))
+                                                   (swap! state assoc :save-status :dirty) (update-ui!)))
+          (set! (.-textContent remove) "×") (set! (.-title remove) "Delete constraint")
+          (.addEventListener remove "click" #(do (swap! state update :constraints
+                                                         (fn [items] (vec (remove (fn [item] (= (:constraint/id item) (:constraint/id constraint))) items))))
+                                                   (swap! state assoc :save-status :dirty) (update-ui!)))
+          (.appendChild row toggle) (.appendChild row remove) (.appendChild container row))))
     (set! (.-textContent (.getElementById js/document "active-channel"))
           (:label (first (filter #(= active-target (:target %)) channel-defs))))
     (when k
@@ -139,6 +154,7 @@
                                        :boneCount (count (get-in @state [:rig :skeleton/bones]))
                                        :poseMatrices (count (animation/bone-world-matrices (:rig @state) (:pose @state)))
                                        :boneTrackCount (count (filter #(and (vector? (:track/target %)) (= :bone (first (:track/target %)))) (:timeline/tracks timeline)))
+                                       :constraintCount (count (:constraints @state))
                                        :translation (mapv #(get (animation/evaluate timeline time) % 0) (take 3 channels))
                                        :rotation (mapv #(get (animation/evaluate timeline time) % 0) (take 3 (drop 3 channels)))
                                        :scale (mapv #(get (animation/evaluate timeline time) % 1) (drop 6 channels))})))
@@ -265,9 +281,9 @@
 (def ^:private storage-key "kami.animator.project.v2")
 (def ^:private backup-key "kami.animator.project.backup")
 (defn- project-document []
-  (let [{:keys [project-id project-name timeline time active-target selected selected-keys profile fps frame-snap? rig pose selected-bone]} @state]
+  (let [{:keys [project-id project-name timeline time active-target selected selected-keys profile fps frame-snap? rig pose selected-bone constraints]} @state]
     (project/document {:id project-id :name project-name :timeline timeline
-                       :rig rig :pose pose
+                       :rig rig :pose pose :constraints constraints
                        :editor {:time time :active-target active-target :selected selected :selected-keys (vec selected-keys) :profile profile
                                 :fps fps :frame-snap? frame-snap? :selected-bone selected-bone}})))
 (defn- save-project! []
@@ -283,6 +299,7 @@
            :selected-keys (set (:selected-keys editor (if-let [id (:selected editor)] [id] [])))
            :fps (:fps editor 24) :frame-snap? (:frame-snap? editor true)
            :rig (:project/rig p) :pose (:project/pose p) :selected-bone (:selected-bone editor :root)
+           :constraints (:project/constraints p)
            :pose-history [(:project/pose p)] :pose-future []
            :playing? false :history [tl] :future [] :save-status :saved)
     (set! (.-value (.getElementById js/document "profile")) (name (:profile editor :maya)))
@@ -305,7 +322,8 @@
     (let [timeline (:timeline @state) time (:time @state) values (animation/evaluate timeline time)
           animated (animation/evaluate-skeleton-pose (:rig @state) timeline time)
           combined {:pose/bones (merge-with merge (:pose/bones (:pose @state)) (:pose/bones animated))}
-          palette (animation/bone-skinning-matrices (:rig @state) combined)]
+          constrained (animation/apply-pose-constraints (:rig @state) combined (:constraints @state))
+          palette (animation/bone-skinning-matrices (:rig @state) constrained)]
       (gpu-mesh/render-skinned-frame! v buffers [0 2.8 6] [0 0 0] [0.45 0.65 1.0] palette
                               {:translation (mapv #(get values % 0) (take 3 channels))
                                :rotation (mapv #(get values % 0) (take 3 (drop 3 channels)))
@@ -350,6 +368,16 @@
                                 next-trs (update current key assoc index (js/parseFloat (.. % -target -value)))]
                             (commit-pose! (assoc-in (:pose @state) [:pose/bones bone-id] next-trs)))))
     (.addEventListener (.getElementById js/document "key-bone-pose") "click" key-selected-bone-pose!)
+    (.addEventListener (.getElementById js/document "add-copy-constraint") "click"
+                       #(let [bone (:selected-bone @state) target (keyword (.-value (.getElementById js/document "constraint-target")))]
+                          (when (not= bone target)
+                            (swap! state update :constraints conj (animation/pose-constraint (random-uuid) :copy-translation bone {:target target :influence 1.0}))
+                            (swap! state assoc :save-status :dirty) (update-ui!))))
+    (.addEventListener (.getElementById js/document "add-limit-constraint") "click"
+                       #(do (swap! state update :constraints conj
+                                   (animation/pose-constraint (random-uuid) :limit-rotation (:selected-bone @state)
+                                                              {:min [-1 -1 -1] :max [1 1 1]}))
+                            (swap! state assoc :save-status :dirty) (update-ui!)))
     (.addEventListener (.getElementById js/document "add-key") "click" add-key!)
     (.addEventListener (.getElementById js/document "delete-key") "click" delete-key!)
     (.addEventListener (.getElementById js/document "copy-key") "click" copy-key!)
