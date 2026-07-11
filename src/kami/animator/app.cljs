@@ -7,10 +7,20 @@
                [-1 -1 -1] [-1 -1 1] [-1 1 1] [-1 1 -1] [1 -1 -1] [1 1 -1] [1 1 1] [1 -1 1]]
    :normals (vec (mapcat #(repeat 4 %) [[0 0 -1] [0 -1 0] [0 1 0] [-1 0 0] [1 0 0] [0 0 1]]))
    :indices (vec (mapcat (fn [i] [i (+ i 1) (+ i 2) i (+ i 2) (+ i 3)]) (range 0 24 4)))})
-(def channels [:cube/x :cube/y :cube/z])
-(def initial (animation/timeline 2 [(animation/track :cube/x [(animation/keyframe 0 -2) (animation/keyframe 2 2 :smooth)])
-                                    (animation/track :cube/y [(animation/keyframe 0 0) (animation/keyframe 1 1 :smooth) (animation/keyframe 2 0 :smooth)])
-                                    (animation/track :cube/z [(animation/keyframe 0 0) (animation/keyframe 2 0)])]))
+(def channel-defs
+  [{:target :cube/x :label "Location X" :default 0} {:target :cube/y :label "Location Y" :default 0} {:target :cube/z :label "Location Z" :default 0}
+   {:target :cube/rotation-x :label "Rotation X" :default 0} {:target :cube/rotation-y :label "Rotation Y" :default 0} {:target :cube/rotation-z :label "Rotation Z" :default 0}
+   {:target :cube/scale-x :label "Scale X" :default 1} {:target :cube/scale-y :label "Scale Y" :default 1} {:target :cube/scale-z :label "Scale Z" :default 1}])
+(def channels (mapv :target channel-defs))
+(def initial
+  (animation/timeline 2
+    (mapv (fn [{:keys [target default]}]
+            (animation/track target
+              (case target
+                :cube/x [(animation/keyframe 0 -2) (animation/keyframe 2 2 :smooth)]
+                :cube/y [(animation/keyframe 0 0) (animation/keyframe 1 1 :smooth) (animation/keyframe 2 0 :smooth)]
+                :cube/rotation-z [(animation/keyframe 0 0) (animation/keyframe 2 (* 2 js/Math.PI) :smooth)]
+                [(animation/keyframe 0 default) (animation/keyframe 2 default)]))) channel-defs)))
 (defonce state (atom {:timeline initial :time 0 :playing? false :active-target :cube/x :selected nil :history [initial] :future []}))
 (defonce viewport (atom nil))
 (declare update-ui!)
@@ -38,19 +48,25 @@
     (doseq [target channels]
       (.toggle (.-classList (.getElementById js/document (str "channel-" (name target))))
                "primary" (= target active-target)))
+    (set! (.-textContent (.getElementById js/document "active-channel"))
+          (:label (first (filter #(= active-target (:target %)) channel-defs))))
     (when k (set! (.-value (.getElementById js/document "key-time")) (:keyframe/time k)) (set! (.-value (.getElementById js/document "key-value")) (:keyframe/value k)) (set! (.-value (.getElementById js/document "interpolation")) (name (:keyframe/interpolation k))))
     (set! (.-textContent (.getElementById js/document "debug-state"))
           (js/JSON.stringify (clj->js {:time time :keyCount (count (frames)) :trackCount (count channels)
                                        :activeTarget (str active-target)
                                        :selected (some-> selected str)
-                                       :translation (mapv #(get (animation/evaluate timeline time) % 0) channels)})))
+                                       :translation (mapv #(get (animation/evaluate timeline time) % 0) (take 3 channels))
+                                       :rotation (mapv #(get (animation/evaluate timeline time) % 0) (take 3 (drop 3 channels)))
+                                       :scale (mapv #(get (animation/evaluate timeline time) % 1) (drop 6 channels))})))
     (render-keys!)))
 (defn- commit! [tl] (swap! state #(-> % (assoc :timeline tl :future []) (update :history conj tl))) (update-ui!))
 (defn- draw! []
   (when-let [{:keys [buffers] :as v} @viewport]
     (let [values (animation/evaluate (:timeline @state) (:time @state))]
       (gpu-mesh/render-frame! v buffers [0 2.8 6] [0 0 0] [0.45 0.65 1.0]
-                              {:translation (mapv #(get values % 0) channels)})))
+                              {:translation (mapv #(get values % 0) (take 3 channels))
+                               :rotation (mapv #(get values % 0) (take 3 (drop 3 channels)))
+                               :scale (mapv #(get values % 1) (drop 6 channels))})))
   (js/requestAnimationFrame draw!))
 (defn- tick! [last-ms]
   (when (:playing? @state)
@@ -64,7 +80,7 @@
     (doseq [target channels]
       (.addEventListener (.getElementById js/document (str "channel-" (name target))) "click"
                          #(do (swap! state assoc :active-target target :selected nil) (update-ui!))))
-    (.addEventListener (.getElementById js/document "add-key") "click" #(let [target (:active-target @state) k (animation/keyframe (:time @state) 0)] (commit! (animation/add-keyframe (:timeline @state) target k)) (swap! state assoc :selected (:keyframe/id k)) (update-ui!)))
+    (.addEventListener (.getElementById js/document "add-key") "click" #(let [target (:active-target @state) value (get (animation/evaluate (:timeline @state) (:time @state)) target 0) k (animation/keyframe (:time @state) value)] (commit! (animation/add-keyframe (:timeline @state) target k)) (swap! state assoc :selected (:keyframe/id k)) (update-ui!)))
     (.addEventListener (.getElementById js/document "delete-key") "click" #(when-let [id (:selected @state)] (commit! (animation/delete-keyframe (:timeline @state) (:active-target @state) id)) (swap! state assoc :selected nil)))
     (.addEventListener (.getElementById js/document "key-time") "change"
                        #(when-let [id (:selected @state)]

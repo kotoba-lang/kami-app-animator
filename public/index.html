@@ -38,7 +38,15 @@ button { cursor: pointer; }</style></head>
         <h2>Outliner</h2>
         <button>◆ Cube</button>
         <h2>Channels</h2>
-        <button class="primary">Location X</button>
+        <button class="primary" id="channel-x">Location X</button>
+        <button id="channel-y">Location Y</button>
+        <button id="channel-z">Location Z</button>
+        <button id="channel-rotation-x">Rotation X</button>
+        <button id="channel-rotation-y">Rotation Y</button>
+        <button id="channel-rotation-z">Rotation Z</button>
+        <button id="channel-scale-x">Scale X</button>
+        <button id="channel-scale-y">Scale Y</button>
+        <button id="channel-scale-z">Scale Z</button>
       </aside>
       <main class="viewport">
         <canvas id="gpu-canvas" aria-label="Animated WebGPU viewport"></canvas>
@@ -60,7 +68,7 @@ button { cursor: pointer; }</style></head>
     <section class="timeline">
       <div class="tracks">
         <strong>Cube</strong>
-        <p>Location X</p>
+        <p id="active-channel">Location X</p>
       </div>
       <div><div class="lane" id="lane">
         <div class="playhead" id="playhead"></div>
