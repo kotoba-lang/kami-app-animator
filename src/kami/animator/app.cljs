@@ -21,7 +21,8 @@
                 :cube/y [(animation/keyframe 0 0) (animation/keyframe 1 1 :smooth) (animation/keyframe 2 0 :smooth)]
                 :cube/rotation-z [(animation/keyframe 0 0) (animation/keyframe 2 (* 2 js/Math.PI) :smooth)]
                 [(animation/keyframe 0 default) (animation/keyframe 2 default)]))) channel-defs)))
-(defonce state (atom {:timeline initial :time 0 :playing? false :active-target :cube/x :selected nil :history [initial] :future []}))
+(defonce state (atom {:timeline initial :time 0 :playing? false :active-target :cube/x :selected nil
+                      :profile :maya :history [initial] :future []}))
 (defonce viewport (atom nil))
 (declare update-ui!)
 
@@ -38,13 +39,19 @@
         (.addEventListener b "click" #(do (swap! state assoc :selected (:keyframe/id k)) (update-ui!)))
         (.appendChild lane b)))))
 (defn- update-ui! []
-  (let [{:keys [time timeline selected history future active-target]} @state
+  (let [{:keys [time timeline selected history future active-target profile]} @state
         k (first (filter #(= selected (:keyframe/id %)) (frames)))]
     (set! (.-value (.getElementById js/document "scrub")) time)
     (set! (.. (.getElementById js/document "playhead") -style -left) (str (* 100 (/ time 2)) "%"))
     (set! (.-textContent (.getElementById js/document "time")) (str (.toFixed time 2) " / " (:timeline/duration timeline) ".00 s"))
     (set! (.-disabled (.getElementById js/document "undo")) (= 1 (count history)))
     (set! (.-disabled (.getElementById js/document "redo")) (empty? future))
+    (set! (.-textContent (.getElementById js/document "play")) (if (:playing? @state) "❚❚ Pause" "▶ Play"))
+    (set! (.-textContent (.getElementById js/document "profile-hint"))
+          (case profile :blender "I Insert Key · Space Play · X Delete"
+                :max "K Set Key · / Play · Delete Key"
+                :c4d "F9 Record · F8 Play · Delete Key"
+                "S Set Key · Alt+V Play · Delete Key"))
     (doseq [target channels]
       (.toggle (.-classList (.getElementById js/document (str "channel-" (name target))))
                "primary" (= target active-target)))
@@ -63,12 +70,62 @@
     (set! (.-textContent (.getElementById js/document "debug-state"))
           (js/JSON.stringify (clj->js {:time time :keyCount (count (frames)) :trackCount (count channels)
                                        :activeTarget (str active-target)
+                                       :profile (name profile) :playing (:playing? @state)
                                        :selected (some-> selected str)
                                        :translation (mapv #(get (animation/evaluate timeline time) % 0) (take 3 channels))
                                        :rotation (mapv #(get (animation/evaluate timeline time) % 0) (take 3 (drop 3 channels)))
                                        :scale (mapv #(get (animation/evaluate timeline time) % 1) (drop 6 channels))})))
     (render-keys!)))
 (defn- commit! [tl] (swap! state #(-> % (assoc :timeline tl :future []) (update :history conj tl))) (update-ui!))
+(defn- add-key! []
+  (let [target (:active-target @state) time (:time @state)
+        value (get (animation/evaluate (:timeline @state) time) target 0)
+        existing (first (filter #(< (js/Math.abs (- (:keyframe/time %) time)) 1.0e-6) (frames)))]
+    (if existing
+      (do (commit! (animation/update-keyframe (:timeline @state) target (:keyframe/id existing) assoc :keyframe/value value))
+          (swap! state assoc :selected (:keyframe/id existing)) (update-ui!))
+      (let [k (animation/keyframe time value)]
+        (commit! (animation/add-keyframe (:timeline @state) target k))
+        (swap! state assoc :selected (:keyframe/id k)) (update-ui!)))))
+(defn- delete-key! []
+  (when-let [id (:selected @state)]
+    (when (> (count (frames)) 1) (commit! (animation/delete-keyframe (:timeline @state) (:active-target @state) id)))
+    (swap! state assoc :selected nil) (update-ui!)))
+(defn- undo! []
+  (when (> (count (:history @state)) 1)
+    (swap! state (fn [s] (let [h (:history s) cur (peek h) h2 (pop h)]
+                           (assoc s :history h2 :timeline (peek h2) :future (conj (:future s) cur)))))
+    (update-ui!)))
+(defn- redo! []
+  (when-let [tl (peek (:future @state))]
+    (swap! state (fn [s] (assoc s :timeline tl :history (conj (:history s) tl) :future (pop (:future s)))))
+    (update-ui!)))
+(declare tick!)
+(defn- toggle-play! []
+  (swap! state update :playing? not)
+  (when (:playing? @state) (tick! (js/performance.now))) (update-ui!))
+(defn- set-time! [time]
+  (swap! state assoc :time (max 0 (min (:timeline/duration (:timeline @state)) time)) :playing? false) (update-ui!))
+(defn- editable-target? [event]
+  (let [target (.-target event) tag (some-> target .-tagName .toLowerCase)]
+    (or (#{"input" "select" "textarea"} tag) (.-isContentEditable target))))
+(defn- command-for-event [event]
+  (let [key (.toLowerCase (.-key event)) ctrl (or (.-ctrlKey event) (.-metaKey event)) alt (.-altKey event)
+        profile (:profile @state)]
+    (cond
+      (and ctrl (= key "z") (.-shiftKey event)) :redo
+      (and ctrl (= key "z")) :undo
+      (and ctrl (= key "y")) :redo
+      (= key "arrowright") :next-frame (= key "arrowleft") :previous-frame
+      (= key "home") :start (= key "end") :end (= key "delete") :delete-key
+      (= profile :maya) (cond (= key "s") :add-key (and alt (= key "v")) :play)
+      (= profile :blender) ({"i" :add-key "x" :delete-key " " :play} key)
+      (= profile :max) ({"k" :add-key "/" :play} key)
+      (= profile :c4d) ({"f9" :add-key "f8" :play} key))))
+(defn- execute-command! [command]
+  (case command :add-key (add-key!) :delete-key (delete-key!) :play (toggle-play!) :undo (undo!) :redo (redo!)
+        :next-frame (set-time! (+ (:time @state) (/ 1 24))) :previous-frame (set-time! (- (:time @state) (/ 1 24)))
+        :start (set-time! 0) :end (set-time! (:timeline/duration (:timeline @state))) nil))
 (defn- draw! []
   (when-let [{:keys [buffers] :as v} @viewport]
     (let [values (animation/evaluate (:timeline @state) (:time @state))]
@@ -88,13 +145,15 @@
 (defn ^:export init! []
   (let [canvas (.getElementById js/document "gpu-canvas")]
     (-> (gpu-mesh/init-canvas! canvas) (.then (fn [v] (let [b (gpu-mesh/upload-mesh! (:mesh-context v) cube-geo)] (reset! viewport (assoc v :buffers b)) (set! (.-textContent (.getElementById js/document "gpu-status")) "") (draw!)))))
-    (.addEventListener (.getElementById js/document "play") "click" #(do (swap! state update :playing? not) (when (:playing? @state) (tick! (js/performance.now)))))
+    (.addEventListener (.getElementById js/document "play") "click" toggle-play!)
     (.addEventListener (.getElementById js/document "scrub") "input" #(do (swap! state assoc :time (js/parseFloat (.. % -target -value)) :playing? false) (update-ui!)))
     (doseq [target channels]
       (.addEventListener (.getElementById js/document (str "channel-" (name target))) "click"
                          #(do (swap! state assoc :active-target target :selected nil) (update-ui!))))
-    (.addEventListener (.getElementById js/document "add-key") "click" #(let [target (:active-target @state) value (get (animation/evaluate (:timeline @state) (:time @state)) target 0) k (animation/keyframe (:time @state) value)] (commit! (animation/add-keyframe (:timeline @state) target k)) (swap! state assoc :selected (:keyframe/id k)) (update-ui!)))
-    (.addEventListener (.getElementById js/document "delete-key") "click" #(when-let [id (:selected @state)] (commit! (animation/delete-keyframe (:timeline @state) (:active-target @state) id)) (swap! state assoc :selected nil)))
+    (.addEventListener (.getElementById js/document "add-key") "click" add-key!)
+    (.addEventListener (.getElementById js/document "delete-key") "click" delete-key!)
+    (.addEventListener (.getElementById js/document "profile") "change" #(do (swap! state assoc :profile (keyword (.. % -target -value))) (update-ui!)))
+    (.addEventListener js/window "keydown" #(when-not (editable-target? %) (when-let [command (command-for-event %)] (.preventDefault %) (execute-command! command))))
     (.addEventListener (.getElementById js/document "key-time") "change"
                        #(when-let [id (:selected @state)]
                           (commit! (animation/move-keyframe (:timeline @state) (:active-target @state) id
@@ -127,12 +186,7 @@
                                         :timeline/loop-end (min (:timeline/duration timeline) (max raw (+ (:timeline/loop-start timeline) 0.01)))
                                         :timeline/playback-rate (max 0.1 (min 4 raw)))]
                             (commit! (assoc timeline field value)))))
-    (.addEventListener (.getElementById js/document "undo") "click" #(when (> (count (:history @state)) 1) (swap! state (fn [s] (let [h (:history s) cur (peek h) h2 (pop h)] (assoc s :history h2 :timeline (peek h2) :future (conj (:future s) cur))))) (update-ui!)))
-    (.addEventListener (.getElementById js/document "redo") "click"
-                       (fn [] (when-let [tl (peek (:future @state))]
-                                (swap! state (fn [s] (assoc s :timeline tl
-                                                           :history (conj (:history s) tl)
-                                                           :future (pop (:future s)))))
-                                (update-ui!))))
+    (.addEventListener (.getElementById js/document "undo") "click" undo!)
+    (.addEventListener (.getElementById js/document "redo") "click" redo!)
     (.addEventListener (.getElementById js/document "export") "click" #(let [a (.createElement js/document "a")] (set! (.-href a) (.createObjectURL js/URL (js/Blob. #js [(pr-str (:timeline @state))] #js {:type "application/edn"}))) (set! (.-download a) "animation.edn") (.click a)))
     (update-ui!)))
