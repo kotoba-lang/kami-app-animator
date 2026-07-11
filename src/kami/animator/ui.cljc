@@ -14,7 +14,10 @@
   ".tracks" {:padding 14 :border-right "1px solid #334267"} ".lane" {:position :relative :margin "42px 18px" :height 50 :background "repeating-linear-gradient(90deg,#2b385b 0 1px,transparent 1px 10%)"}
   ".key" {:position :absolute :top 17 :width 14 :height 14 :border 0 :padding 0 :background "#87a7ff" :transform "translateX(-50%) rotate(45deg)"}
   ".key.selected" {:background "#ffd18f"} ".playhead" {:position :absolute :top 0 :bottom 0 :width 2 :background "#ff6f87" :pointer-events :none}
-  "#scrub" {:width "calc(100% - 36px)"} ".inspector" {:padding 14 :border-left "1px solid #334267"} "label" {:display :grid :gap 5 :margin-bottom 10}}})
+  "#scrub" {:width "calc(100% - 36px)"} ".inspector" {:padding 14 :border-left "1px solid #334267"} "label" {:display :grid :gap 5 :margin-bottom 10}
+  "#curve-graph" {:width "calc(100% - 36px)" :height 150 :margin "0 18px" :background "#09101e"}
+  ".graph-grid" {:stroke "#263554" :stroke-width 1} ".curve-path" {:fill :none :stroke "#82a7ff" :stroke-width 3}
+  ".graph-key" {:fill "#ffd18f" :stroke "#09101e" :stroke-width 2 :cursor :pointer} ".graph-key.selected" {:fill "#ff6f87"}}})
 
 (defn page []
   (html/html5 [:html {:lang "en"}
@@ -37,7 +40,7 @@
       [:label [:input {:id "frame-snap" :type "checkbox" :checked true}] "Snap keys to frames"]
       [:h2 "Profile"] [:select {:id "profile"} [:option {:value "maya"} "Maya"] [:option {:value "blender"} "Blender"] [:option {:value "max"} "3ds Max"] [:option {:value "c4d"} "Cinema 4D"]] [:p {:id "profile-hint"} "S Set Key · Alt+V Play · Delete Key"]]]
     [:section.timeline [:div.tracks [:strong "Cube"] [:p {:id "active-channel"} "Location X"]]
-     [:div [:div.lane {:id "lane"} [:div.playhead {:id "playhead"}]] [:input {:id "scrub" :type "range" :min 0 :max 2 :step 0.01 :value 0}] [:span {:id "time"} "0.00 / 2.00 s"]]
+     [:div [:div.lane {:id "lane"} [:div.playhead {:id "playhead"}]] [:svg {:id "curve-graph" :viewBox "0 0 800 160" :role "img" :aria-label "Active channel animation curve"}] [:input {:id "scrub" :type "range" :min 0 :max 2 :step 0.01 :value 0}] [:span {:id "time"} "0.00 / 2.00 s"]]
      [:div.inspector [:h2 "Keyframe"] [:div [:button {:id "copy-key"} "Copy"] [:button {:id "paste-key"} "Paste"] [:button {:id "duplicate-key"} "Duplicate +1 frame"]] [:label "Time" [:input {:id "key-time" :type "number" :step 0.1}]] [:label "Value" [:input {:id "key-value" :type "number" :step 0.1}]] [:label "Interpolation" [:select {:id "interpolation"} [:option {:value "linear"} "Linear"] [:option {:value "smooth"} "Smooth"] [:option {:value "hermite"} "Hermite"] [:option {:value "step"} "Step"]]] [:label "Tangent in" [:input {:id "tangent-in" :type "number" :step 0.1 :value 0}]] [:label "Tangent out" [:input {:id "tangent-out" :type "number" :step 0.1 :value 0}]] [:button {:id "auto-tangents"} "Auto tangents"]]]
     [:span {:id "debug-state" :style {:display "none"}}]
     [:script {:src "./js/app.js"}]]]))

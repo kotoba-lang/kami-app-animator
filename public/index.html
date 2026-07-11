@@ -5,6 +5,11 @@
 .primary { background: #6f8fff; color: #071127; font-weight: 700; }
 .viewport { position: relative; }
 #scrub { width: calc(100% - 36px); }
+#curve-graph { width: calc(100% - 36px); height: 150px; margin: 0 18px; background: #09101e; }
+.graph-grid { stroke: #263554; stroke-width: 1; }
+.curve-path { fill: none; stroke: #82a7ff; stroke-width: 3; }
+.graph-key { fill: #ffd18f; stroke: #09101e; stroke-width: 2; cursor: pointer; }
+.graph-key.selected { fill: #ff6f87; }
 body { margin: 0; height: 100vh; display: grid; grid-template-rows: 52px 1fr 340px; font-family: Inter,system-ui; background: #090d18; color: #e8ecf8; }
 .playhead { position: absolute; top: 0; bottom: 0; width: 2px; background: #ff6f87; pointer-events: none; }
 label { display: grid; gap: 5px; margin-bottom: 10px; }
@@ -85,7 +90,7 @@ button { cursor: pointer; }</style></head>
       </div>
       <div><div class="lane" id="lane">
         <div class="playhead" id="playhead"></div>
-      </div><input id="scrub" type="range" min="0" max="2" step="0.01" value="0"><span id="time">0.00 / 2.00 s</span></div>
+      </div><svg id="curve-graph" viewBox="0 0 800 160" role="img" aria-label="Active channel animation curve"></svg><input id="scrub" type="range" min="0" max="2" step="0.01" value="0"><span id="time">0.00 / 2.00 s</span></div>
       <div class="inspector">
         <h2>Keyframe</h2>
         <div><button id="copy-key">Copy</button><button id="paste-key">Paste</button><button id="duplicate-key">Duplicate +1 frame</button></div>

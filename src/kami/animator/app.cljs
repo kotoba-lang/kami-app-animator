@@ -1,5 +1,5 @@
 (ns kami.animator.app
-  (:require [cljs.reader :as reader] [kami.animation :as animation]
+  (:require [cljs.reader :as reader] [clojure.string :as string] [kami.animation :as animation]
             [kami.animator.project :as project] [kami.webgpu.mesh :as gpu-mesh]))
 
 (def cube-geo
@@ -32,6 +32,31 @@
 (defn- frames
   ([] (frames (:active-target @state)))
   ([target] (:track/keyframes (first (filter #(= target (:track/target %)) (:timeline/tracks (:timeline @state)))))))
+(defn- active-track [] (first (filter #(= (:active-target @state) (:track/target %)) (:timeline/tracks (:timeline @state)))))
+(defn- render-graph! []
+  (let [svg (.getElementById js/document "curve-graph") track (active-track) duration (:timeline/duration (:timeline @state))
+        sample-count 65 times (mapv #(* duration (/ % (dec sample-count))) (range sample-count))
+        values (mapv #(animation/sample track %) times) key-values (mapv :keyframe/value (:track/keyframes track))
+        min-value (reduce min (concat values key-values)) max-value (reduce max (concat values key-values))
+        span (max 1.0e-6 (- max-value min-value)) padding (* span 0.1) low (- min-value padding) high (+ max-value padding)
+        x #(-> % (/ duration) (* 800)) y #(-> (- high %) (/ (- high low)) (* 160))
+        svg-ns "http://www.w3.org/2000/svg"]
+    (set! (.-innerHTML svg) "")
+    (doseq [gy [40 80 120]]
+      (let [line (.createElementNS js/document svg-ns "line")]
+        (doseq [[attr value] [["x1" 0] ["x2" 800] ["y1" gy] ["y2" gy] ["class" "graph-grid"]]] (.setAttribute line attr value))
+        (.appendChild svg line)))
+    (let [path (.createElementNS js/document svg-ns "polyline")]
+      (.setAttribute path "class" "curve-path")
+      (.setAttribute path "points" (string/join " " (map (fn [t value] (str (x t) "," (y value))) times values)))
+      (.appendChild svg path))
+    (doseq [k (:track/keyframes track)]
+      (let [circle (.createElementNS js/document svg-ns "circle")]
+        (doseq [[attr value] [["cx" (x (:keyframe/time k))] ["cy" (y (:keyframe/value k))] ["r" 6]
+                              ["class" (str "graph-key" (when (= (:keyframe/id k) (:selected @state)) " selected"))]]]
+          (.setAttribute circle attr value))
+        (.addEventListener circle "click" #(do (swap! state assoc :selected (:keyframe/id k) :time (:keyframe/time k)) (update-ui!)))
+        (.appendChild svg circle)))))
 (defn- render-keys! []
   (let [lane (.getElementById js/document "lane")]
     (doseq [n (array-seq (.querySelectorAll lane ".key"))] (.remove n))
@@ -82,12 +107,12 @@
                                        :profile (name profile) :playing (:playing? @state)
                                        :projectVersion project/current-version :revision revision :saveStatus (name save-status)
                                        :fps fps :frame (js/Math.round (* time fps)) :frameSnap frame-snap?
-                                       :clipboard (boolean clipboard)
+                                       :clipboard (boolean clipboard) :graphSamples 65
                                        :selected (some-> selected str)
                                        :translation (mapv #(get (animation/evaluate timeline time) % 0) (take 3 channels))
                                        :rotation (mapv #(get (animation/evaluate timeline time) % 0) (take 3 (drop 3 channels)))
                                        :scale (mapv #(get (animation/evaluate timeline time) % 1) (drop 6 channels))})))
-    (render-keys!)))
+    (render-keys!) (render-graph!)))
 (defn- commit! [tl] (swap! state #(-> % (assoc :timeline tl :future [] :save-status :dirty)
                                         (update :history conj tl) (update :revision inc))) (update-ui!))
 (defn- snap-time [time]
