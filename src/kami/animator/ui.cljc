@@ -27,4 +27,5 @@
     [:section.timeline [:div.tracks [:strong "Cube"] [:p "Location X"]]
      [:div [:div.lane {:id "lane"} [:div.playhead {:id "playhead"}]] [:input {:id "scrub" :type "range" :min 0 :max 2 :step 0.01 :value 0}] [:span {:id "time"} "0.00 / 2.00 s"]]
      [:div.inspector [:h2 "Keyframe"] [:label "Time" [:input {:id "key-time" :type "number" :step 0.1}]] [:label "Value" [:input {:id "key-value" :type "number" :step 0.1}]] [:label "Interpolation" [:select {:id "interpolation"} [:option {:value "linear"} "Linear"] [:option {:value "smooth"} "Smooth"] [:option {:value "step"} "Step"]]]]]
+    [:span {:id "debug-state" :style {:display "none"}}]
     [:script {:src "./js/app.js"}]]]))
