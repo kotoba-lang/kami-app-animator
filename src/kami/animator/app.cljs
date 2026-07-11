@@ -25,9 +25,9 @@
 (defonce state (atom {:timeline initial :time 0 :playing? false :active-target :cube/x :selected nil
                       :profile :maya :history [initial] :future []
                       :project-id "untitled-animation" :project-name "Untitled Animation"
-                      :fps 24 :frame-snap? true :revision 0 :save-status :clean}))
+                      :fps 24 :frame-snap? true :clipboard nil :revision 0 :save-status :clean}))
 (defonce viewport (atom nil))
-(declare update-ui!)
+(declare update-ui! set-time!)
 
 (defn- frames
   ([] (frames (:active-target @state)))
@@ -42,7 +42,7 @@
         (.addEventListener b "click" #(do (swap! state assoc :selected (:keyframe/id k)) (update-ui!)))
         (.appendChild lane b)))))
 (defn- update-ui! []
-  (let [{:keys [time timeline selected history future active-target profile revision save-status fps frame-snap?]} @state
+  (let [{:keys [time timeline selected history future active-target profile revision save-status fps frame-snap? clipboard]} @state
         k (first (filter #(= selected (:keyframe/id %)) (frames)))]
     (set! (.-value (.getElementById js/document "scrub")) time)
     (set! (.. (.getElementById js/document "playhead") -style -left) (str (* 100 (/ time (:timeline/duration timeline))) "%"))
@@ -82,6 +82,7 @@
                                        :profile (name profile) :playing (:playing? @state)
                                        :projectVersion project/current-version :revision revision :saveStatus (name save-status)
                                        :fps fps :frame (js/Math.round (* time fps)) :frameSnap frame-snap?
+                                       :clipboard (boolean clipboard)
                                        :selected (some-> selected str)
                                        :translation (mapv #(get (animation/evaluate timeline time) % 0) (take 3 channels))
                                        :rotation (mapv #(get (animation/evaluate timeline time) % 0) (take 3 (drop 3 channels)))
@@ -105,6 +106,29 @@
   (when-let [id (:selected @state)]
     (when (> (count (frames)) 1) (commit! (animation/delete-keyframe (:timeline @state) (:active-target @state) id)))
     (swap! state assoc :selected nil) (update-ui!)))
+(defn- selected-key [] (first (filter #(= (:selected @state) (:keyframe/id %)) (frames))))
+(defn- copy-key! []
+  (when-let [k (selected-key)]
+    (swap! state assoc :clipboard (select-keys k [:keyframe/value :keyframe/interpolation
+                                                  :keyframe/tangent-in :keyframe/tangent-out :keyframe/broken?]))
+    (update-ui!)))
+(defn- paste-key! []
+  (when-let [data (:clipboard @state)]
+    (let [target (:active-target @state) time (snap-time (:time @state))
+          existing (first (filter #(< (js/Math.abs (- (:keyframe/time %) time)) 1.0e-7) (frames)))
+          frame (merge (animation/keyframe time (:keyframe/value data) (:keyframe/interpolation data)) data)]
+      (if existing
+        (do (commit! (animation/update-keyframe (:timeline @state) target (:keyframe/id existing) merge data))
+            (swap! state assoc :selected (:keyframe/id existing)))
+        (do (commit! (animation/add-keyframe (:timeline @state) target frame))
+            (swap! state assoc :selected (:keyframe/id frame))))
+      (update-ui!))))
+(defn- cut-key! [] (when (selected-key) (copy-key!) (delete-key!)))
+(defn- duplicate-key! []
+  (when (selected-key)
+    (copy-key!)
+    (set-time! (min (:timeline/duration (:timeline @state)) (+ (:time @state) (/ 1 (:fps @state)))))
+    (paste-key!)))
 (defn- undo! []
   (when (> (count (:history @state)) 1)
     (swap! state (fn [s] (let [h (:history s) cur (peek h) h2 (pop h)]
@@ -130,6 +154,10 @@
       (and ctrl (= key "z") (.-shiftKey event)) :redo
       (and ctrl (= key "z")) :undo
       (and ctrl (= key "y")) :redo
+      (and ctrl (= key "c")) :copy-key
+      (and ctrl (= key "x")) :cut-key
+      (and ctrl (= key "v")) :paste-key
+      (and (.-shiftKey event) (= key "d")) :duplicate-key
       (= key "arrowright") :next-frame (= key "arrowleft") :previous-frame
       (= key "home") :start (= key "end") :end (= key "delete") :delete-key
       (= profile :maya) (cond (= key "s") :add-key (and alt (= key "v")) :play)
@@ -138,6 +166,7 @@
       (= profile :c4d) ({"f9" :add-key "f8" :play} key))))
 (defn- execute-command! [command]
   (case command :add-key (add-key!) :delete-key (delete-key!) :play (toggle-play!) :undo (undo!) :redo (redo!)
+        :copy-key (copy-key!) :cut-key (cut-key!) :paste-key (paste-key!) :duplicate-key (duplicate-key!)
         :next-frame (set-time! (+ (:time @state) (/ 1 (:fps @state)))) :previous-frame (set-time! (- (:time @state) (/ 1 (:fps @state))))
         :start (set-time! 0) :end (set-time! (:timeline/duration (:timeline @state))) nil))
 
@@ -212,6 +241,9 @@
                          #(do (swap! state assoc :active-target target :selected nil) (update-ui!))))
     (.addEventListener (.getElementById js/document "add-key") "click" add-key!)
     (.addEventListener (.getElementById js/document "delete-key") "click" delete-key!)
+    (.addEventListener (.getElementById js/document "copy-key") "click" copy-key!)
+    (.addEventListener (.getElementById js/document "paste-key") "click" paste-key!)
+    (.addEventListener (.getElementById js/document "duplicate-key") "click" duplicate-key!)
     (.addEventListener (.getElementById js/document "profile") "change" #(do (swap! state assoc :profile (keyword (.. % -target -value))) (update-ui!)))
     (.addEventListener js/window "keydown" #(when-not (editable-target? %) (when-let [command (command-for-event %)] (.preventDefault %) (execute-command! command))))
     (.addEventListener (.getElementById js/document "key-time") "change"
