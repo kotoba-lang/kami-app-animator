@@ -25,7 +25,7 @@
 (defonce state (atom {:timeline initial :time 0 :playing? false :active-target :cube/x :selected nil
                       :profile :maya :history [initial] :future []
                       :project-id "untitled-animation" :project-name "Untitled Animation"
-                      :revision 0 :save-status :clean}))
+                      :fps 24 :frame-snap? true :revision 0 :save-status :clean}))
 (defonce viewport (atom nil))
 (declare update-ui!)
 
@@ -38,15 +38,18 @@
     (doseq [k (frames)]
       (let [b (.createElement js/document "button")]
         (set! (.-className b) (str "key" (when (= (:keyframe/id k) (:selected @state)) " selected")))
-        (set! (.. b -style -left) (str (* 100 (/ (:keyframe/time k) 2)) "%"))
+        (set! (.. b -style -left) (str (* 100 (/ (:keyframe/time k) (:timeline/duration (:timeline @state)))) "%"))
         (.addEventListener b "click" #(do (swap! state assoc :selected (:keyframe/id k)) (update-ui!)))
         (.appendChild lane b)))))
 (defn- update-ui! []
-  (let [{:keys [time timeline selected history future active-target profile revision save-status]} @state
+  (let [{:keys [time timeline selected history future active-target profile revision save-status fps frame-snap?]} @state
         k (first (filter #(= selected (:keyframe/id %)) (frames)))]
     (set! (.-value (.getElementById js/document "scrub")) time)
-    (set! (.. (.getElementById js/document "playhead") -style -left) (str (* 100 (/ time 2)) "%"))
-    (set! (.-textContent (.getElementById js/document "time")) (str (.toFixed time 2) " / " (:timeline/duration timeline) ".00 s"))
+    (set! (.. (.getElementById js/document "playhead") -style -left) (str (* 100 (/ time (:timeline/duration timeline))) "%"))
+    (set! (.-max (.getElementById js/document "scrub")) (:timeline/duration timeline))
+    (set! (.-step (.getElementById js/document "scrub")) (/ 1 fps))
+    (set! (.-textContent (.getElementById js/document "time"))
+          (str "Frame " (js/Math.round (* time fps)) " · " (.toFixed time 3) " / " (.toFixed (:timeline/duration timeline) 3) " s"))
     (set! (.-disabled (.getElementById js/document "undo")) (= 1 (count history)))
     (set! (.-disabled (.getElementById js/document "redo")) (empty? future))
     (set! (.-textContent (.getElementById js/document "play")) (if (:playing? @state) "❚❚ Pause" "▶ Play"))
@@ -70,11 +73,15 @@
     (set! (.-value (.getElementById js/document "loop-start")) (:timeline/loop-start timeline 0))
     (set! (.-value (.getElementById js/document "loop-end")) (:timeline/loop-end timeline (:timeline/duration timeline)))
     (set! (.-value (.getElementById js/document "playback-rate")) (:timeline/playback-rate timeline 1))
+    (set! (.-value (.getElementById js/document "fps")) fps)
+    (set! (.-checked (.getElementById js/document "frame-snap")) frame-snap?)
+    (set! (.-value (.getElementById js/document "duration")) (:timeline/duration timeline))
     (set! (.-textContent (.getElementById js/document "debug-state"))
           (js/JSON.stringify (clj->js {:time time :keyCount (count (frames)) :trackCount (count channels)
                                        :activeTarget (str active-target)
                                        :profile (name profile) :playing (:playing? @state)
                                        :projectVersion project/current-version :revision revision :saveStatus (name save-status)
+                                       :fps fps :frame (js/Math.round (* time fps)) :frameSnap frame-snap?
                                        :selected (some-> selected str)
                                        :translation (mapv #(get (animation/evaluate timeline time) % 0) (take 3 channels))
                                        :rotation (mapv #(get (animation/evaluate timeline time) % 0) (take 3 (drop 3 channels)))
@@ -82,8 +89,10 @@
     (render-keys!)))
 (defn- commit! [tl] (swap! state #(-> % (assoc :timeline tl :future [] :save-status :dirty)
                                         (update :history conj tl) (update :revision inc))) (update-ui!))
+(defn- snap-time [time]
+  (if (:frame-snap? @state) (/ (js/Math.round (* time (:fps @state))) (:fps @state)) time))
 (defn- add-key! []
-  (let [target (:active-target @state) time (:time @state)
+  (let [target (:active-target @state) time (snap-time (:time @state))
         value (get (animation/evaluate (:timeline @state) time) target 0)
         existing (first (filter #(< (js/Math.abs (- (:keyframe/time %) time)) 1.0e-6) (frames)))]
     (if existing
@@ -129,15 +138,16 @@
       (= profile :c4d) ({"f9" :add-key "f8" :play} key))))
 (defn- execute-command! [command]
   (case command :add-key (add-key!) :delete-key (delete-key!) :play (toggle-play!) :undo (undo!) :redo (redo!)
-        :next-frame (set-time! (+ (:time @state) (/ 1 24))) :previous-frame (set-time! (- (:time @state) (/ 1 24)))
+        :next-frame (set-time! (+ (:time @state) (/ 1 (:fps @state)))) :previous-frame (set-time! (- (:time @state) (/ 1 (:fps @state))))
         :start (set-time! 0) :end (set-time! (:timeline/duration (:timeline @state))) nil))
 
 (def ^:private storage-key "kami.animator.project.v2")
 (def ^:private backup-key "kami.animator.project.backup")
 (defn- project-document []
-  (let [{:keys [project-id project-name timeline time active-target selected profile]} @state]
+  (let [{:keys [project-id project-name timeline time active-target selected profile fps frame-snap?]} @state]
     (project/document {:id project-id :name project-name :timeline timeline
-                       :editor {:time time :active-target active-target :selected selected :profile profile}})))
+                       :editor {:time time :active-target active-target :selected selected :profile profile
+                                :fps fps :frame-snap? frame-snap?}})))
 (defn- save-project! []
   (let [data (pr-str (project-document)) previous (.getItem js/localStorage storage-key)]
     (when previous (.setItem js/localStorage backup-key previous))
@@ -148,6 +158,7 @@
     (swap! state assoc :project-id (:project/id p) :project-name (:project/name p)
            :timeline tl :time (min (:time editor 0) (:timeline/duration tl))
            :active-target target :selected (:selected editor) :profile (:profile editor :maya)
+           :fps (:fps editor 24) :frame-snap? (:frame-snap? editor true)
            :playing? false :history [tl] :future [] :save-status :saved)
     (set! (.-value (.getElementById js/document "profile")) (name (:profile editor :maya)))
     (update-ui!)))
@@ -185,6 +196,17 @@
     (-> (gpu-mesh/init-canvas! canvas) (.then (fn [v] (let [b (gpu-mesh/upload-mesh! (:mesh-context v) cube-geo)] (reset! viewport (assoc v :buffers b)) (set! (.-textContent (.getElementById js/document "gpu-status")) "") (draw!)))))
     (.addEventListener (.getElementById js/document "play") "click" toggle-play!)
     (.addEventListener (.getElementById js/document "scrub") "input" #(do (swap! state assoc :time (js/parseFloat (.. % -target -value)) :playing? false) (update-ui!)))
+    (.addEventListener (.getElementById js/document "fps") "change"
+                       #(do (swap! state assoc :fps (js/parseInt (.. % -target -value)) :save-status :dirty) (update-ui!)))
+    (.addEventListener (.getElementById js/document "frame-snap") "change"
+                       #(do (swap! state assoc :frame-snap? (.. % -target -checked) :save-status :dirty) (update-ui!)))
+    (.addEventListener (.getElementById js/document "duration") "change"
+                       #(let [requested (max 0.1 (js/parseFloat (.. % -target -value)))
+                              latest (reduce max 0 (map :keyframe/time (mapcat :track/keyframes (:timeline/tracks (:timeline @state)))))
+                              duration (max requested latest)]
+                          (commit! (-> (:timeline @state) (assoc :timeline/duration duration)
+                                       (update :timeline/loop-end min duration)))
+                          (set! (.-value (.-target %)) duration)))
     (doseq [target channels]
       (.addEventListener (.getElementById js/document (str "channel-" (name target))) "click"
                          #(do (swap! state assoc :active-target target :selected nil) (update-ui!))))
@@ -195,7 +217,7 @@
     (.addEventListener (.getElementById js/document "key-time") "change"
                        #(when-let [id (:selected @state)]
                           (commit! (animation/move-keyframe (:timeline @state) (:active-target @state) id
-                                                            (js/parseFloat (.. % -target -value))))))
+                                                            (snap-time (js/parseFloat (.. % -target -value)))))))
     (.addEventListener (.getElementById js/document "key-value") "change"
                        #(when-let [id (:selected @state)]
                           (commit! (animation/update-keyframe (:timeline @state) (:active-target @state) id assoc

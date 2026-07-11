@@ -65,6 +65,9 @@ button { cursor: pointer; }</style></head>
         <label>Loop start<input id="loop-start" type="number" min="0" max="2" step="0.1" value="0"></label>
         <label>Loop end<input id="loop-end" type="number" min="0" max="2" step="0.1" value="2"></label>
         <label>Playback rate<input id="playback-rate" type="number" min="0.1" max="4" step="0.1" value="1"></label>
+        <label>Frame rate<select id="fps"><option value="24">24 fps</option><option value="25">25 fps</option><option value="30">30 fps</option><option value="60">60 fps</option></select></label>
+        <label>Duration (s)<input id="duration" type="number" min="0.1" step="0.1" value="2"></label>
+        <label><input id="frame-snap" type="checkbox" checked>Snap keys to frames</label>
         <h2>Profile</h2>
         <select id="profile">
           <option value="maya">Maya</option>
