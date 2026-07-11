@@ -21,7 +21,10 @@
    [:head [:meta {:charset "utf-8"}] [:meta {:name "viewport" :content "width=device-width,initial-scale=1"}] [:link {:rel "icon" :href "data:,"}] [:title "Kami Animator"] [:style (css/css sheet)]]
    [:body
     [:header [:strong "KAMI ANIMATOR"] [:a {:href "https://kotoba-lang.github.io/kami-studio/"} "Studio"] [:span "WebGPU animation workspace"] [:span.spacer] [:button {:id "undo"} "Undo"] [:button {:id "redo"} "Redo"] [:button {:id "export"} "Export EDN"]]
-    [:section.workspace [:aside [:h2 "Outliner"] [:button "◆ Cube"] [:h2 "Channels"] [:button.primary "Location X"]]
+    [:section.workspace [:aside [:h2 "Outliner"] [:button "◆ Cube"] [:h2 "Channels"]
+                                [:button.primary {:id "channel-x"} "Location X"]
+                                [:button {:id "channel-y"} "Location Y"]
+                                [:button {:id "channel-z"} "Location Z"]]
      [:main.viewport [:canvas {:id "gpu-canvas" :aria-label "Animated WebGPU viewport"}] [:div {:id "gpu-status"} "Initializing WebGPU…"]]
      [:aside [:h2 "Playback"] [:button.primary {:id "play"} "▶ Play"] [:button {:id "add-key"} "＋ Key at playhead"] [:button {:id "delete-key"} "Delete selected"] [:h2 "Profile"] [:select {:id "profile"} [:option "Maya"] [:option "Blender"] [:option "3ds Max"]]]]
     [:section.timeline [:div.tracks [:strong "Cube"] [:p "Location X"]]
