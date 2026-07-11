@@ -30,7 +30,7 @@
                       :rig project/default-rig :pose project/default-pose :selected-bone :root
                       :pose-history [project/default-pose] :pose-future []}))
 (defonce viewport (atom nil))
-(declare update-ui! set-time!)
+(declare update-ui! set-time! commit! snap-time)
 
 (defn- frames
   ([] (frames (:active-target @state)))
@@ -133,6 +133,7 @@
                                        :selected (some-> selected str) :selectedBone (some-> (:selected-bone @state) name)
                                        :boneCount (count (get-in @state [:rig :skeleton/bones]))
                                        :poseMatrices (count (animation/bone-world-matrices (:rig @state) (:pose @state)))
+                                       :boneTrackCount (count (filter #(and (vector? (:track/target %)) (= :bone (first (:track/target %)))) (:timeline/tracks timeline)))
                                        :translation (mapv #(get (animation/evaluate timeline time) % 0) (take 3 channels))
                                        :rotation (mapv #(get (animation/evaluate timeline time) % 0) (take 3 (drop 3 channels)))
                                        :scale (mapv #(get (animation/evaluate timeline time) % 1) (drop 6 channels))})))
@@ -143,6 +144,19 @@
   (swap! state #(-> % (assoc :pose pose :pose-future [] :save-status :dirty)
                            (update :pose-history conj pose) (update :revision inc)))
   (update-ui!))
+(defn- key-selected-bone-pose! []
+  (let [bone-id (:selected-bone @state)
+        bone (first (filter #(= bone-id (:bone/id %)) (get-in @state [:rig :skeleton/bones])))
+        trs (merge (:bone/rest bone) (get-in @state [:pose :pose/bones bone-id]))
+        time (snap-time (:time @state))
+        next-timeline
+        (reduce (fn [tl [channel values]]
+                  (reduce (fn [tl [axis value]]
+                            (animation/add-keyframe tl (animation/bone-track-target bone-id channel axis)
+                                                    (animation/keyframe time value)))
+                          tl (map vector [:x :y :z] values)))
+                (:timeline @state) (select-keys trs [:translation :rotation :scale]))]
+    (commit! next-timeline)))
 (defn- snap-time [time]
   (if (:frame-snap? @state) (/ (js/Math.round (* time (:fps @state))) (:fps @state)) time))
 (defn- add-key! []
@@ -327,6 +341,7 @@
                                 current (merge (:bone/rest bone) (get-in @state [:pose :pose/bones bone-id]))
                                 next-trs (update current key assoc index (js/parseFloat (.. % -target -value)))]
                             (commit-pose! (assoc-in (:pose @state) [:pose/bones bone-id] next-trs)))))
+    (.addEventListener (.getElementById js/document "key-bone-pose") "click" key-selected-bone-pose!)
     (.addEventListener (.getElementById js/document "add-key") "click" add-key!)
     (.addEventListener (.getElementById js/document "delete-key") "click" delete-key!)
     (.addEventListener (.getElementById js/document "copy-key") "click" copy-key!)

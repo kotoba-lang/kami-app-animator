@@ -32,7 +32,7 @@
      [:main.viewport [:canvas {:id "gpu-canvas" :aria-label "Animated WebGPU viewport"}] [:div {:id "gpu-status"} "Initializing WebGPU…"]]
      [:aside [:h2 "Pose Mode"] [:strong {:id "pose-bone-name"} "Root"]
       [:label "Translate X" [:input {:id "pose-tx" :type "number" :step 0.1 :value 0}]] [:label "Translate Y" [:input {:id "pose-ty" :type "number" :step 0.1 :value 0}]] [:label "Translate Z" [:input {:id "pose-tz" :type "number" :step 0.1 :value 0}]]
-      [:label "Rotate X" [:input {:id "pose-rx" :type "number" :step 0.05 :value 0}]] [:label "Rotate Y" [:input {:id "pose-ry" :type "number" :step 0.05 :value 0}]] [:label "Rotate Z" [:input {:id "pose-rz" :type "number" :step 0.05 :value 0}]]
+      [:label "Rotate X" [:input {:id "pose-rx" :type "number" :step 0.05 :value 0}]] [:label "Rotate Y" [:input {:id "pose-ry" :type "number" :step 0.05 :value 0}]] [:label "Rotate Z" [:input {:id "pose-rz" :type "number" :step 0.05 :value 0}]] [:button.primary {:id "key-bone-pose"} "Key Bone Pose"]
       [:h2 "Playback"] [:button.primary {:id "play"} "▶ Play"] [:button {:id "add-key"} "＋ Key at playhead"] [:button {:id "delete-key"} "Delete selected"]
       [:label [:input {:id "loop" :type "checkbox"}] "Loop range"]
       [:label "Loop start" [:input {:id "loop-start" :type "number" :min 0 :max 2 :step 0.1 :value 0}]]
