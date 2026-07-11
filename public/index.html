@@ -66,6 +66,14 @@ button { cursor: pointer; } :focus-visible { outline: 3px solid #ffd166; outline
         <div id="gpu-status">Initializing WebGPU…</div>
       </main>
       <aside>
+        <h2>Pose Mode</h2>
+        <strong id="pose-bone-name">Root</strong>
+        <label>Translate X<input id="pose-tx" type="number" step="0.1" value="0"></label>
+        <label>Translate Y<input id="pose-ty" type="number" step="0.1" value="0"></label>
+        <label>Translate Z<input id="pose-tz" type="number" step="0.1" value="0"></label>
+        <label>Rotate X<input id="pose-rx" type="number" step="0.05" value="0"></label>
+        <label>Rotate Y<input id="pose-ry" type="number" step="0.05" value="0"></label>
+        <label>Rotate Z<input id="pose-rz" type="number" step="0.05" value="0"></label>
         <h2>Playback</h2>
         <button class="primary" id="play">▶ Play</button>
         <button id="add-key">＋ Key at playhead</button>

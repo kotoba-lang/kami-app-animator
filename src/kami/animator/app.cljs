@@ -27,7 +27,8 @@
                       :profile :maya :history [initial] :future []
                       :project-id "untitled-animation" :project-name "Untitled Animation"
                       :fps 24 :frame-snap? true :clipboard nil :revision 0 :save-status :clean
-                      :rig project/default-rig :pose project/default-pose :selected-bone :root}))
+                      :rig project/default-rig :pose project/default-pose :selected-bone :root
+                      :pose-history [project/default-pose] :pose-future []}))
 (defonce viewport (atom nil))
 (declare update-ui! set-time!)
 
@@ -86,8 +87,8 @@
     (set! (.-step (.getElementById js/document "scrub")) (/ 1 fps))
     (set! (.-textContent (.getElementById js/document "time"))
           (str "Frame " (js/Math.round (* time fps)) " · " (.toFixed time 3) " / " (.toFixed (:timeline/duration timeline) 3) " s"))
-    (set! (.-disabled (.getElementById js/document "undo")) (= 1 (count history)))
-    (set! (.-disabled (.getElementById js/document "redo")) (empty? future))
+    (set! (.-disabled (.getElementById js/document "undo")) (and (= 1 (count history)) (= 1 (count (:pose-history @state)))))
+    (set! (.-disabled (.getElementById js/document "redo")) (and (empty? future) (empty? (:pose-future @state))))
     (set! (.-textContent (.getElementById js/document "play")) (if (:playing? @state) "❚❚ Pause" "▶ Play"))
     (set! (.-textContent (.getElementById js/document "profile-hint"))
           (case profile :blender "I Insert Key · Space Play · X Delete"
@@ -100,6 +101,13 @@
     (doseq [bone [:root :spine :head]]
       (.toggle (.-classList (.getElementById js/document (str "bone-" (name bone))))
                "primary" (= bone (:selected-bone @state))))
+    (let [bone-id (:selected-bone @state)
+          bone (first (filter #(= bone-id (:bone/id %)) (get-in @state [:rig :skeleton/bones])))
+          trs (merge (:bone/rest bone) (get-in @state [:pose :pose/bones bone-id]))]
+      (set! (.-textContent (.getElementById js/document "pose-bone-name")) (:bone/name bone))
+      (doseq [[prefix values] [["pose-t" (:translation trs)] ["pose-r" (:rotation trs)]]
+              [axis value] (map vector ["x" "y" "z"] values)]
+        (set! (.-value (.getElementById js/document (str prefix axis))) value)))
     (set! (.-textContent (.getElementById js/document "active-channel"))
           (:label (first (filter #(= active-target (:target %)) channel-defs))))
     (when k
@@ -131,6 +139,10 @@
     (render-keys!) (render-graph!)))
 (defn- commit! [tl] (swap! state #(-> % (assoc :timeline tl :future [] :save-status :dirty)
                                         (update :history conj tl) (update :revision inc))) (update-ui!))
+(defn- commit-pose! [pose]
+  (swap! state #(-> % (assoc :pose pose :pose-future [] :save-status :dirty)
+                           (update :pose-history conj pose) (update :revision inc)))
+  (update-ui!))
 (defn- snap-time [time]
   (if (:frame-snap? @state) (/ (js/Math.round (* time (:fps @state))) (:fps @state)) time))
 (defn- add-key! []
@@ -184,14 +196,19 @@
     (set-time! (min (:timeline/duration (:timeline @state)) (+ (:time @state) (/ 1 (:fps @state)))))
     (paste-key!)))
 (defn- undo! []
-  (when (> (count (:history @state)) 1)
+  (if (> (count (:pose-history @state)) 1)
+    (swap! state (fn [s] (let [h (:pose-history s) cur (peek h) h2 (pop h)]
+                           (assoc s :pose-history h2 :pose (peek h2) :pose-future (conj (:pose-future s) cur)))))
+   (when (> (count (:history @state)) 1)
     (swap! state (fn [s] (let [h (:history s) cur (peek h) h2 (pop h)]
                            (assoc s :history h2 :timeline (peek h2) :future (conj (:future s) cur)))))
-    (update-ui!)))
+    )) (update-ui!))
 (defn- redo! []
-  (when-let [tl (peek (:future @state))]
+  (if-let [pose (peek (:pose-future @state))]
+    (swap! state (fn [s] (assoc s :pose pose :pose-history (conj (:pose-history s) pose) :pose-future (pop (:pose-future s)))))
+   (when-let [tl (peek (:future @state))]
     (swap! state (fn [s] (assoc s :timeline tl :history (conj (:history s) tl) :future (pop (:future s)))))
-    (update-ui!)))
+    )) (update-ui!))
 (declare tick!)
 (defn- toggle-play! []
   (swap! state update :playing? not)
@@ -247,6 +264,7 @@
            :selected-keys (set (:selected-keys editor (if-let [id (:selected editor)] [id] [])))
            :fps (:fps editor 24) :frame-snap? (:frame-snap? editor true)
            :rig (:project/rig p) :pose (:project/pose p) :selected-bone (:selected-bone editor :root)
+           :pose-history [(:project/pose p)] :pose-future []
            :playing? false :history [tl] :future [] :save-status :saved)
     (set! (.-value (.getElementById js/document "profile")) (name (:profile editor :maya)))
     (update-ui!)))
@@ -301,6 +319,14 @@
     (doseq [bone [:root :spine :head]]
       (.addEventListener (.getElementById js/document (str "bone-" (name bone))) "click"
                          #(do (swap! state assoc :selected-bone bone :save-status :dirty) (update-ui!))))
+    (doseq [[prefix key] [["pose-t" :translation] ["pose-r" :rotation]]
+            [axis index] (map vector ["x" "y" "z"] (range 3))]
+      (.addEventListener (.getElementById js/document (str prefix axis)) "change"
+                         #(let [bone-id (:selected-bone @state)
+                                bone (first (filter (fn [b] (= bone-id (:bone/id b))) (get-in @state [:rig :skeleton/bones])))
+                                current (merge (:bone/rest bone) (get-in @state [:pose :pose/bones bone-id]))
+                                next-trs (update current key assoc index (js/parseFloat (.. % -target -value)))]
+                            (commit-pose! (assoc-in (:pose @state) [:pose/bones bone-id] next-trs)))))
     (.addEventListener (.getElementById js/document "add-key") "click" add-key!)
     (.addEventListener (.getElementById js/document "delete-key") "click" delete-key!)
     (.addEventListener (.getElementById js/document "copy-key") "click" copy-key!)
