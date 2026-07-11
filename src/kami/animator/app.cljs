@@ -7,6 +7,11 @@
                [-1 -1 -1] [1 -1 -1] [1 -1 1] [-1 -1 1] [-1 1 -1] [-1 1 1] [1 1 1] [1 1 -1]
                [-1 -1 -1] [-1 -1 1] [-1 1 1] [-1 1 -1] [1 -1 -1] [1 1 -1] [1 1 1] [1 -1 1]]
    :normals (vec (mapcat #(repeat 4 %) [[0 0 -1] [0 -1 0] [0 1 0] [-1 0 0] [1 0 0] [0 0 1]]))
+   :joints (mapv (fn [[_ y _]] (if (pos? y) [2 0 0 0] [0 0 0 0]))
+                 [[-1 -1 -1] [1 -1 -1] [1 1 -1] [-1 1 -1] [-1 -1 1] [1 -1 1] [1 1 1] [-1 1 1]
+                  [-1 -1 -1] [1 -1 -1] [1 -1 1] [-1 -1 1] [-1 1 -1] [-1 1 1] [1 1 1] [1 1 -1]
+                  [-1 -1 -1] [-1 -1 1] [-1 1 1] [-1 1 -1] [1 -1 -1] [1 1 -1] [1 1 1] [1 -1 1]])
+   :weights (vec (repeat 24 [1 0 0 0]))
    :indices (vec (mapcat (fn [i] [i (+ i 1) (+ i 2) i (+ i 2) (+ i 3)]) (range 0 24 4)))})
 (def channel-defs
   [{:target :cube/x :label "Location X" :default 0} {:target :cube/y :label "Location Y" :default 0} {:target :cube/z :label "Location Z" :default 0}
@@ -297,8 +302,11 @@
     (-> (.text file) (.then #(apply-project! (reader/read-string %))))))
 (defn- draw! []
   (when-let [{:keys [buffers] :as v} @viewport]
-    (let [values (animation/evaluate (:timeline @state) (:time @state))]
-      (gpu-mesh/render-frame! v buffers [0 2.8 6] [0 0 0] [0.45 0.65 1.0]
+    (let [timeline (:timeline @state) time (:time @state) values (animation/evaluate timeline time)
+          animated (animation/evaluate-skeleton-pose (:rig @state) timeline time)
+          combined {:pose/bones (merge-with merge (:pose/bones (:pose @state)) (:pose/bones animated))}
+          palette (animation/bone-skinning-matrices (:rig @state) combined)]
+      (gpu-mesh/render-skinned-frame! v buffers [0 2.8 6] [0 0 0] [0.45 0.65 1.0] palette
                               {:translation (mapv #(get values % 0) (take 3 channels))
                                :rotation (mapv #(get values % 0) (take 3 (drop 3 channels)))
                                :scale (mapv #(get values % 1) (drop 6 channels))})))
