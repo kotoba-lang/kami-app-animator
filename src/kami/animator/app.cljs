@@ -23,6 +23,7 @@
                 :cube/rotation-z [(animation/keyframe 0 0) (animation/keyframe 2 (* 2 js/Math.PI) :smooth)]
                 [(animation/keyframe 0 default) (animation/keyframe 2 default)]))) channel-defs)))
 (defonce state (atom {:timeline initial :time 0 :playing? false :active-target :cube/x :selected nil
+                      :selected-keys #{}
                       :profile :maya :history [initial] :future []
                       :project-id "untitled-animation" :project-name "Untitled Animation"
                       :fps 24 :frame-snap? true :clipboard nil :revision 0 :save-status :clean}))
@@ -33,6 +34,14 @@
   ([] (frames (:active-target @state)))
   ([target] (:track/keyframes (first (filter #(= target (:track/target %)) (:timeline/tracks (:timeline @state)))))))
 (defn- active-track [] (first (filter #(= (:active-target @state) (:track/target %)) (:timeline/tracks (:timeline @state)))))
+(defn- select-key! [event keyframe]
+  (let [id (:keyframe/id keyframe) additive (or (.-shiftKey event) (.-ctrlKey event) (.-metaKey event))]
+    (swap! state (fn [s]
+                   (if additive
+                     (let [selected (if ((:selected-keys s) id) (disj (:selected-keys s) id) (conj (:selected-keys s) id))]
+                       (assoc s :selected-keys selected :selected (when (selected id) id)))
+                     (assoc s :selected-keys #{id} :selected id))))
+  (update-ui!)))
 (defn- render-graph! []
   (let [svg (.getElementById js/document "curve-graph") track (active-track) duration (:timeline/duration (:timeline @state))
         sample-count 65 times (mapv #(* duration (/ % (dec sample-count))) (range sample-count))
@@ -53,22 +62,22 @@
     (doseq [k (:track/keyframes track)]
       (let [circle (.createElementNS js/document svg-ns "circle")]
         (doseq [[attr value] [["cx" (x (:keyframe/time k))] ["cy" (y (:keyframe/value k))] ["r" 6]
-                              ["class" (str "graph-key" (when (= (:keyframe/id k) (:selected @state)) " selected"))]]]
+                              ["class" (str "graph-key" (when ((:selected-keys @state) (:keyframe/id k)) " selected"))]]]
           (.setAttribute circle attr value))
-        (.addEventListener circle "click" #(do (swap! state assoc :selected (:keyframe/id k) :time (:keyframe/time k)) (update-ui!)))
+        (.addEventListener circle "click" #(do (swap! state assoc :time (:keyframe/time k)) (select-key! % k)))
         (.appendChild svg circle)))))
 (defn- render-keys! []
   (let [lane (.getElementById js/document "lane")]
     (doseq [n (array-seq (.querySelectorAll lane ".key"))] (.remove n))
     (doseq [k (frames)]
       (let [b (.createElement js/document "button")]
-        (set! (.-className b) (str "key" (when (= (:keyframe/id k) (:selected @state)) " selected")))
+        (set! (.-className b) (str "key" (when ((:selected-keys @state) (:keyframe/id k)) " selected")))
         (.setAttribute b "aria-label" (str "Keyframe at " (:keyframe/time k) " seconds, value " (:keyframe/value k)))
         (set! (.. b -style -left) (str (* 100 (/ (:keyframe/time k) (:timeline/duration (:timeline @state)))) "%"))
-        (.addEventListener b "click" #(do (swap! state assoc :selected (:keyframe/id k)) (update-ui!)))
+        (.addEventListener b "click" #(select-key! % k))
         (.appendChild lane b)))))
 (defn- update-ui! []
-  (let [{:keys [time timeline selected history future active-target profile revision save-status fps frame-snap? clipboard]} @state
+  (let [{:keys [time timeline selected selected-keys history future active-target profile revision save-status fps frame-snap? clipboard]} @state
         k (first (filter #(= selected (:keyframe/id %)) (frames)))]
     (set! (.-value (.getElementById js/document "scrub")) time)
     (set! (.. (.getElementById js/document "playhead") -style -left) (str (* 100 (/ time (:timeline/duration timeline))) "%"))
@@ -108,7 +117,7 @@
                                        :profile (name profile) :playing (:playing? @state)
                                        :projectVersion project/current-version :revision revision :saveStatus (name save-status)
                                        :fps fps :frame (js/Math.round (* time fps)) :frameSnap frame-snap?
-                                       :clipboard (boolean clipboard) :graphSamples 65
+                                       :clipboard (boolean clipboard) :graphSamples 65 :selectedCount (count selected-keys)
                                        :selected (some-> selected str)
                                        :translation (mapv #(get (animation/evaluate timeline time) % 0) (take 3 channels))
                                        :rotation (mapv #(get (animation/evaluate timeline time) % 0) (take 3 (drop 3 channels)))
@@ -124,14 +133,27 @@
         existing (first (filter #(< (js/Math.abs (- (:keyframe/time %) time)) 1.0e-6) (frames)))]
     (if existing
       (do (commit! (animation/update-keyframe (:timeline @state) target (:keyframe/id existing) assoc :keyframe/value value))
-          (swap! state assoc :selected (:keyframe/id existing)) (update-ui!))
+          (swap! state assoc :selected (:keyframe/id existing) :selected-keys #{(:keyframe/id existing)}) (update-ui!))
       (let [k (animation/keyframe time value)]
         (commit! (animation/add-keyframe (:timeline @state) target k))
-        (swap! state assoc :selected (:keyframe/id k)) (update-ui!)))))
+        (swap! state assoc :selected (:keyframe/id k) :selected-keys #{(:keyframe/id k)}) (update-ui!)))))
 (defn- delete-key! []
-  (when-let [id (:selected @state)]
-    (when (> (count (frames)) 1) (commit! (animation/delete-keyframe (:timeline @state) (:active-target @state) id)))
-    (swap! state assoc :selected nil) (update-ui!)))
+  (let [ids (if (seq (:selected-keys @state)) (:selected-keys @state) (some-> (:selected @state) hash-set))]
+    (when (and (seq ids) (< (count ids) (count (frames))))
+      (commit! (reduce #(animation/delete-keyframe %1 (:active-target @state) %2) (:timeline @state) ids))
+      (swap! state assoc :selected nil :selected-keys #{}) (update-ui!))))
+(defn- nudge-selected! [frames-delta]
+  (let [ids (:selected-keys @state) delta (/ frames-delta (:fps @state)) target (:active-target @state)
+        candidates (mapv #(if (ids (:keyframe/id %)) (update % :keyframe/time + delta) %) (:track/keyframes (active-track)))
+        times (mapv :keyframe/time candidates)
+        valid? (and (seq ids) (every? #(<= 0 % (:timeline/duration (:timeline @state))) times)
+                    (= (count times) (count (distinct times))))]
+    (when valid?
+      (let [tracks (mapv #(if (= target (:track/target %)) (animation/track target candidates) %) (:timeline/tracks (:timeline @state)))]
+        (commit! (assoc (:timeline @state) :timeline/tracks tracks))
+        (when-let [primary (first (filter #(= (:selected @state) (:keyframe/id %)) candidates))]
+          (swap! state assoc :time (:keyframe/time primary)))
+        (update-ui!)))))
 (defn- selected-key [] (first (filter #(= (:selected @state) (:keyframe/id %)) (frames))))
 (defn- copy-key! []
   (when-let [k (selected-key)]
@@ -145,9 +167,9 @@
           frame (merge (animation/keyframe time (:keyframe/value data) (:keyframe/interpolation data)) data)]
       (if existing
         (do (commit! (animation/update-keyframe (:timeline @state) target (:keyframe/id existing) merge data))
-            (swap! state assoc :selected (:keyframe/id existing)))
+            (swap! state assoc :selected (:keyframe/id existing) :selected-keys #{(:keyframe/id existing)}))
         (do (commit! (animation/add-keyframe (:timeline @state) target frame))
-            (swap! state assoc :selected (:keyframe/id frame))))
+            (swap! state assoc :selected (:keyframe/id frame) :selected-keys #{(:keyframe/id frame)})))
       (update-ui!))))
 (defn- cut-key! [] (when (selected-key) (copy-key!) (delete-key!)))
 (defn- duplicate-key! []
@@ -184,6 +206,7 @@
       (and ctrl (= key "x")) :cut-key
       (and ctrl (= key "v")) :paste-key
       (and (.-shiftKey event) (= key "d")) :duplicate-key
+      (and alt (= key "arrowright")) :nudge-right (and alt (= key "arrowleft")) :nudge-left
       (= key "arrowright") :next-frame (= key "arrowleft") :previous-frame
       (= key "home") :start (= key "end") :end (= key "delete") :delete-key
       (= profile :maya) (cond (= key "s") :add-key (and alt (= key "v")) :play)
@@ -193,15 +216,16 @@
 (defn- execute-command! [command]
   (case command :add-key (add-key!) :delete-key (delete-key!) :play (toggle-play!) :undo (undo!) :redo (redo!)
         :copy-key (copy-key!) :cut-key (cut-key!) :paste-key (paste-key!) :duplicate-key (duplicate-key!)
+        :nudge-left (nudge-selected! -1) :nudge-right (nudge-selected! 1)
         :next-frame (set-time! (+ (:time @state) (/ 1 (:fps @state)))) :previous-frame (set-time! (- (:time @state) (/ 1 (:fps @state))))
         :start (set-time! 0) :end (set-time! (:timeline/duration (:timeline @state))) nil))
 
 (def ^:private storage-key "kami.animator.project.v2")
 (def ^:private backup-key "kami.animator.project.backup")
 (defn- project-document []
-  (let [{:keys [project-id project-name timeline time active-target selected profile fps frame-snap?]} @state]
+  (let [{:keys [project-id project-name timeline time active-target selected selected-keys profile fps frame-snap?]} @state]
     (project/document {:id project-id :name project-name :timeline timeline
-                       :editor {:time time :active-target active-target :selected selected :profile profile
+                       :editor {:time time :active-target active-target :selected selected :selected-keys (vec selected-keys) :profile profile
                                 :fps fps :frame-snap? frame-snap?}})))
 (defn- save-project! []
   (let [data (pr-str (project-document)) previous (.getItem js/localStorage storage-key)]
@@ -213,6 +237,7 @@
     (swap! state assoc :project-id (:project/id p) :project-name (:project/name p)
            :timeline tl :time (min (:time editor 0) (:timeline/duration tl))
            :active-target target :selected (:selected editor) :profile (:profile editor :maya)
+           :selected-keys (set (:selected-keys editor (if-let [id (:selected editor)] [id] [])))
            :fps (:fps editor 24) :frame-snap? (:frame-snap? editor true)
            :playing? false :history [tl] :future [] :save-status :saved)
     (set! (.-value (.getElementById js/document "profile")) (name (:profile editor :maya)))
@@ -264,12 +289,14 @@
                           (set! (.-value (.-target %)) duration)))
     (doseq [target channels]
       (.addEventListener (.getElementById js/document (str "channel-" (name target))) "click"
-                         #(do (swap! state assoc :active-target target :selected nil) (update-ui!))))
+                         #(do (swap! state assoc :active-target target :selected nil :selected-keys #{}) (update-ui!))))
     (.addEventListener (.getElementById js/document "add-key") "click" add-key!)
     (.addEventListener (.getElementById js/document "delete-key") "click" delete-key!)
     (.addEventListener (.getElementById js/document "copy-key") "click" copy-key!)
     (.addEventListener (.getElementById js/document "paste-key") "click" paste-key!)
     (.addEventListener (.getElementById js/document "duplicate-key") "click" duplicate-key!)
+    (.addEventListener (.getElementById js/document "nudge-left") "click" #(nudge-selected! -1))
+    (.addEventListener (.getElementById js/document "nudge-right") "click" #(nudge-selected! 1))
     (.addEventListener (.getElementById js/document "profile") "change" #(do (swap! state assoc :profile (keyword (.. % -target -value))) (update-ui!)))
     (.addEventListener js/window "keydown" #(when-not (editable-target? %) (when-let [command (command-for-event %)] (.preventDefault %) (execute-command! command))))
     (.addEventListener (.getElementById js/document "key-time") "change"
