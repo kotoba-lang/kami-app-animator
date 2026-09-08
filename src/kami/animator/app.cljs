@@ -1,5 +1,5 @@
 (ns kami.animator.app
-  (:require [cljs.reader :as reader] [clojure.string :as string] [kami.animation :as animation]
+  (:require [cljs.reader :as reader] [kotoba.lang.text :as string] [kami.animation :as animation]
             [kami.animator.project :as project] [kami.webgpu.mesh :as gpu-mesh]))
 
 (def cube-geo
