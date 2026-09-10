@@ -1,3 +1,6 @@
 .cpcache/
 .DS_Store
 public/js/cljs-runtime/
+dist/
+.shadow-cljs/
+node_modules/
