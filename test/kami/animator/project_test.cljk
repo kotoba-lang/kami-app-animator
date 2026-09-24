@@ -1,5 +1,5 @@
 (ns kami.animator.project-test
-  (:require [clojure.test :refer [deftest is]]
+  (:require [kotoba.test :refer [deftest is]]
             [kami.animation :as animation]
             [kami.animator.project :as project]))
 
